@@ -6,7 +6,32 @@ from transformers import T5ForConditionalGeneration, T5Config, AutoTokenizer
 from transformers import Trainer, TrainingArguments
 from torch.utils.tensorboard import SummaryWriter
 import glob
+from torch.utils.data import DataLoader
 
+def custom_collate_fn(batch):
+    """
+    Custom collate function to handle padding and stacking in the DataLoader.
+    This ensures that sequences are padded to the max length in the batch,
+    and embeddings are stacked together.
+    """
+    # Extract the input_ids, attention_mask, labels, and encoder_hidden_states from the batch
+    input_ids = [item['input_ids'] for item in batch]
+    attention_mask = [item['attention_mask'] for item in batch]
+    labels = [item['labels'] for item in batch]
+    encoder_hidden_states = [item['encoder_hidden_states'] for item in batch]
+
+    # Pad the input sequences
+    input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=0)
+    attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask, batch_first=True, padding_value=0)
+    labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=-100)  # -100 for ignoring padding in loss
+    encoder_hidden_states = torch.stack(encoder_hidden_states, dim=0)  # Stack embeddings into a batch
+
+    return {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "labels": labels,
+        "encoder_hidden_states": encoder_hidden_states
+    }
 CHUCK_SIZE = 8096
 
 
@@ -38,6 +63,7 @@ class MoleculeDataset(Dataset):
             truncation=True,
             return_tensors="pt"
         )
+
         return {
             "encoder_hidden_states": embedding,
             "input_ids": tokens["input_ids"].squeeze(),
@@ -113,8 +139,8 @@ def main():
     training_args = TrainingArguments(
         output_dir="./results",
         num_train_epochs=10,
-        per_device_train_batch_size=32,
-        per_device_eval_batch_size=32,
+        per_device_train_batch_size=2,
+        per_device_eval_batch_size=2,
         learning_rate=1e-4,  # Constant learning rate
         logging_dir='./logs',
         logging_steps=100,
@@ -134,6 +160,7 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
+        data_collator=custom_collate_fn,
     )
 
     # Train model
