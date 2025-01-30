@@ -15,6 +15,18 @@ print(f"Number of parameters: {model.num_parameters(),}")
 
 tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
 
+
+def split_into_max_len(smiles):
+    max_len = 1024
+    chunks = []
+    if len(smiles) < max_len:
+        return [smiles]
+    for i in range(0, len(smiles), max_len):
+        end = min(i + max_len, len(smiles))
+        chunks.append(smiles[i:end])
+    return chunks
+
+
 chunks = os.listdir("ZINK")
 pbar = tqdm(chunks)
 total_smiles = 0
@@ -23,9 +35,11 @@ for chunk in pbar:
         smiles_ids = f.read().splitlines()
     smiles = [smiles_id.split()[0] for smiles_id in smiles_ids]
     total_smiles += len(smiles)
-    inputs = tokenizer(smiles, padding=True, return_tensors="pt").to(device)
-    with torch.no_grad():
-        outputs = model(**inputs)
-    embeds = outputs.pooler_output.cpu().numpy()
-    np.save(f"ZINK/{chunk}.npy", embeds)
+    smiles_list = split_into_max_len(smiles)
+    for i, smiles in enumerate(smiles_list):
+        inputs = tokenizer(smiles, padding=True, return_tensors="pt").to(device)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        embeds = outputs.pooler_output.cpu().numpy()
+        np.save(f"ZINK/{chunk}_{i}.npy", embeds)
     pbar.set_description(f"Total SMILES: {total_smiles}")
