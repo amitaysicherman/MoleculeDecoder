@@ -17,7 +17,7 @@ tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_r
 
 
 def split_into_max_len(smiles):
-    max_len = 1024
+    max_len = 8096
     chunks = []
     if len(smiles) < max_len:
         return [smiles]
