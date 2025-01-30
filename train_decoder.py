@@ -114,6 +114,7 @@ def main():
         num_heads=8,
         is_decoder=True,
         is_encoder_decoder=False,  # We're only using the decoder
+        decoder_start_token_id=tokenizer.pad_token_id,
     )
 
     # Initialize model using T5ForConditionalGeneration
