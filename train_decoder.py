@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, random_split
 from transformers import T5ForConditionalGeneration, T5Config, AutoTokenizer
 from transformers import Trainer, TrainingArguments
 from torch.utils.tensorboard import SummaryWriter
@@ -53,6 +53,34 @@ class MoleculeDataset(Dataset):
         }
 
 
+def compute_metrics(eval_pred):
+    """
+    Compute metrics for evaluation
+    """
+    predictions, labels = eval_pred
+    # Get argmax of predictions
+    predictions = np.argmax(predictions, axis=-1)
+
+    # Create mask for padding tokens
+    mask = labels != -100
+
+    # Calculate token accuracy (ignoring padding)
+    total_tokens = mask.sum()
+    correct_tokens = ((predictions == labels) & mask).sum()
+    token_accuracy = correct_tokens / total_tokens
+
+    # Calculate sequence accuracy (all tokens correct)
+    sequence_matches = [(pred == label).all() for pred, label in
+                        zip(predictions[mask.reshape(predictions.shape[0], -1)],
+                            labels[mask.reshape(labels.shape[0], -1)])]
+    sequence_accuracy = np.mean(sequence_matches)
+
+    return {
+        "token_accuracy": token_accuracy,
+        "sequence_accuracy": sequence_accuracy
+    }
+
+
 def main():
     # Load MolFormer tokenizer
     tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
@@ -75,56 +103,56 @@ def main():
     # Setup tensorboard
     writer = SummaryWriter('runs/molecule_decoder')
 
+    # Create full dataset
+    full_dataset = MoleculeDataset(
+        data_dir="ZINK_NP",
+        tokenizer=tokenizer
+    )
+
+    # Split dataset into train and evaluation
+    train_size = int(0.9 * len(full_dataset))
+    eval_size = len(full_dataset) - train_size
+    train_dataset, eval_dataset = random_split(
+        full_dataset, [train_size, eval_size]
+    )
+
     # Training arguments
     training_args = TrainingArguments(
         output_dir="./results",
         num_train_epochs=10,
         per_device_train_batch_size=32,
+        per_device_eval_batch_size=32,
         learning_rate=1e-4,  # Constant learning rate
         logging_dir='./logs',
         logging_steps=100,
         save_steps=1000,
+        eval_steps=500,  # Evaluate every 500 steps
+        evaluation_strategy="steps",
         report_to=["tensorboard"],
         lr_scheduler_type="constant",  # Use constant learning rate
+        load_best_model_at_end=True,
+        metric_for_best_model="token_accuracy",
     )
 
-    # Create dataset
-    train_dataset = MoleculeDataset(
-        data_dir="ZINK_NP",
-        tokenizer=tokenizer
-    )
-
-    # Initialize trainer
+    # Initialize trainer with evaluation
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        compute_metrics=compute_metrics,
     )
 
     # Train model
     trainer.train()
 
+    # Final evaluation
+    final_metrics = trainer.evaluate()
+    print("Final Evaluation Metrics:", final_metrics)
+
     # Save final model
     trainer.save_model("./molecule_decoder_final")
     writer.close()
-
-
-def generate_molecules(model, embeddings, tokenizer, max_length=512):
-    """
-    Generate SMILES strings from embeddings
-    """
-    with torch.no_grad():
-        outputs = model.generate(
-            encoder_hidden_states=embeddings,
-            max_length=max_length,
-            num_beams=4,
-            length_penalty=0.6,
-            early_stopping=True
-        )
-
-        # Decode outputs to SMILES strings
-        smiles = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-        return smiles
 
 
 if __name__ == "__main__":
