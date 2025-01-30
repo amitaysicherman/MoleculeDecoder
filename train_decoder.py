@@ -38,13 +38,6 @@ class MoleculeDataset(Dataset):
             truncation=True,
             return_tensors="pt"
         )
-        print(f"Loaded {self.embedding_files[idx]}")
-        print(f"Loaded {smile_file}")
-        # print all shapes
-        print(f"embedding: {embedding.shape}")
-        print(f"input_ids: {tokens['input_ids'].shape}")
-        print(f"attention_mask: {tokens['attention_mask'].shape}")
-        print(f"labels: {tokens['input_ids'].shape}")
         return {
             "encoder_hidden_states": embedding,
             "input_ids": tokens["input_ids"].squeeze(),
