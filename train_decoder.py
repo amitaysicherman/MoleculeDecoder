@@ -2,12 +2,7 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset, random_split
-from transformers import T5ForConditionalGeneration, T5Config, AutoTokenizer
 from transformers import Trainer, TrainingArguments
-# from torch.utils.tensorboard import SummaryWriter
-import glob
-from torch.utils.data import DataLoader
-import torch
 import torch.nn as nn
 from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer,GenerationConfig
 
@@ -15,7 +10,7 @@ import mmap
 
 
 class SMILESDataset(Dataset):
-    def __init__(self, bin_file_path, indices_file_path):
+    def __init__(self, bin_file_path, indices_file_path, tokenizer):
         """
         Initialize the dataset.
         Args:
@@ -24,7 +19,7 @@ class SMILESDataset(Dataset):
         """
         # Load indices
         self.indices = np.load(indices_file_path)
-
+        self.tokenizer = tokenizer
         # Memory map the binary file for efficient access
         self.bin_file = open(bin_file_path, 'rb')
         self.mm = mmap.mmap(self.bin_file.fileno(), 0, access=mmap.ACCESS_READ)
@@ -54,8 +49,7 @@ class SMILESDataset(Dataset):
 
         # Read and decode the SMILES string
         smile = self.mm[start_idx:end_idx].decode('utf-8')
-
-        return smile
+        return self.tokenizer(smile, padding="max_length", truncation=True, max_length=512)
 
     def __del__(self):
         """Cleanup when the dataset is destroyed"""
@@ -91,86 +85,84 @@ def compute_metrics(eval_pred):
     }
 
 
-def main():
-    # Load MolFormer tokenizer
-    tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
-
-    # Initialize model config (matching roughly 50M params)
-    config = T5Config(
-        vocab_size=len(tokenizer),
-        d_model=768,  # Same as MolFormer
-        d_ff=2048,
-        num_layers=6,  # Reduced from MolFormer's 12 to match param count
-        num_decoder_layers=6,
-        num_heads=8,
-        is_decoder=True,
-        is_encoder_decoder=False,  # We're only using the decoder
-        decoder_start_token_id=tokenizer.pad_token_id,
-    )
-
-    # Initialize model using T5ForConditionalGeneration
-    model = T5ForConditionalGeneration(config)
-
-    # Setup tensorboard
-    # writer = SummaryWriter('runs/molecule_decoder')
-
-    # Create full dataset
-    full_dataset = SMILESDataset(
-        bin_file_path="ZINK_PROCESSED/smiles.bin",
-        indices_file_path="ZINK_PROCESSED/indices.npy"
-    )
-
-    # Split dataset into train and evaluation
-    train_size = int(0.9 * len(full_dataset))
-    eval_size = len(full_dataset) - train_size
-    train_dataset, eval_dataset = random_split(
-        full_dataset, [train_size, eval_size]
-    )
-
-    # Training arguments
-    training_args = TrainingArguments(
-        output_dir="./results",
-        num_train_epochs=10,
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
-        learning_rate=1e-4,  # Constant learning rate
-        logging_dir='./logs',
-        logging_steps=100,
-        save_steps=1000,
-        eval_steps=500,  # Evaluate every 500 steps
-        evaluation_strategy="steps",
-        report_to=["tensorboard"],
-        lr_scheduler_type="constant",  # Use constant learning rate
-        load_best_model_at_end=True,
-        metric_for_best_model="token_accuracy",
-    )
-
-    # Initialize trainer with evaluation
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        compute_metrics=compute_metrics,
-    )
-
-    # Train model
-    trainer.train()
-
-    # Final evaluation
-    final_metrics = trainer.evaluate()
-    print("Final Evaluation Metrics:", final_metrics)
-
-    # Save final model
-    trainer.save_model("./molecule_decoder_final")
-    # writer.close()
-
-
+# def main():
+#     # Load MolFormer tokenizer
+#     tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
+#
+#     # Initialize model config (matching roughly 50M params)
+#     config = T5Config(
+#         vocab_size=len(tokenizer),
+#         d_model=768,  # Same as MolFormer
+#         d_ff=2048,
+#         num_layers=6,  # Reduced from MolFormer's 12 to match param count
+#         num_decoder_layers=6,
+#         num_heads=8,
+#         is_decoder=True,
+#         is_encoder_decoder=False,  # We're only using the decoder
+#         decoder_start_token_id=tokenizer.pad_token_id,
+#     )
+#
+#     # Initialize model using T5ForConditionalGeneration
+#     model = T5ForConditionalGeneration(config)
+#
+#     # Setup tensorboard
+#     # writer = SummaryWriter('runs/molecule_decoder')
+#
+#     # Create full dataset
+#     full_dataset = SMILESDataset(
+#         bin_file_path="ZINK_PROCESSED/smiles.bin",
+#         indices_file_path="ZINK_PROCESSED/indices.npy"
+#     )
+#
+#     # Split dataset into train and evaluation
+#     train_size = int(0.9 * len(full_dataset))
+#     eval_size = len(full_dataset) - train_size
+#     train_dataset, eval_dataset = random_split(
+#         full_dataset, [train_size, eval_size]
+#     )
+#
+#     # Training arguments
+#     training_args = TrainingArguments(
+#         output_dir="./results",
+#         num_train_epochs=10,
+#         per_device_train_batch_size=2,
+#         per_device_eval_batch_size=2,
+#         learning_rate=1e-4,  # Constant learning rate
+#         logging_dir='./logs',
+#         logging_steps=100,
+#         save_steps=1000,
+#         eval_steps=500,  # Evaluate every 500 steps
+#         evaluation_strategy="steps",
+#         report_to=["tensorboard"],
+#         lr_scheduler_type="constant",  # Use constant learning rate
+#         load_best_model_at_end=True,
+#         metric_for_best_model="token_accuracy",
+#     )
+#
+#     # Initialize trainer with evaluation
+#     trainer = Trainer(
+#         model=model,
+#         args=training_args,
+#         train_dataset=train_dataset,
+#         eval_dataset=eval_dataset,
+#         compute_metrics=compute_metrics,
+#     )
+#
+#     # Train model
+#     trainer.train()
+#
+#     # Final evaluation
+#     final_metrics = trainer.evaluate()
+#     print("Final Evaluation Metrics:", final_metrics)
+#
+#     # Save final model
+#     trainer.save_model("./molecule_decoder_final")
+#     # writer.close()
+#
 
 class MolFormerT5Decoder(T5ForConditionalGeneration):
     def __init__(self, config):
         super().__init__(config)
-
         # Load and freeze MolFormer
         self.molformer = AutoModel.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
@@ -178,64 +170,40 @@ class MolFormerT5Decoder(T5ForConditionalGeneration):
         )
         for param in self.molformer.parameters():
             param.requires_grad = False
-
         # Simple projection if needed
         if self.molformer.config.hidden_size != config.d_model:
             self.proj = nn.Linear(self.molformer.config.hidden_size, config.d_model)
         else:
             self.proj = nn.Identity()
 
-    def forward(self, input_ids, attention_mask=None, **kwargs):
+    def forward(self, input_ids, attention_mask=None):
         # Get MolFormer embedding
         mol_outputs = self.molformer(input_ids, attention_mask=attention_mask)
         encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
-
         # Use parent class forward, but replace encoder_outputs
         outputs = super().forward(
             input_ids=None,  # No need for input_ids since we're providing encoder_outputs
             attention_mask=attention_mask,
             encoder_outputs=[encoder_outputs],  # T5 expects a list
-            **kwargs
+            labels=input_ids,  # Use input_ids as labels for training
         )
-
         return outputs
-
-    def _prepare_encoder_decoder_kwargs_for_generation(
-            self,
-            inputs_tensor: torch.Tensor,
-            model_kwargs,
-            model_input_name,
-            generation_config,
-    ):
-        # Get MolFormer embedding
-        mol_outputs = self.molformer(inputs_tensor)
-        encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
-
-        # Use parent class method, but replace encoder_outputs
-        return super()._prepare_encoder_decoder_kwargs_for_generation(
-            inputs_tensor=None,  # No need for input_ids since we're providing encoder_outputs
-            model_kwargs=model_kwargs,
-            model_input_name=model_input_name,
-            generation_config=generation_config,
-            encoder_outputs=[encoder_outputs],  # T5 expects a list
-        )
-
 
 def create_model():
     # Initialize tokenizer
     tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
-
     # Initialize config
     config = T5Config(
         vocab_size=len(tokenizer),
-        d_model=768,
-        d_ff=2048,
-        num_layers=6,
-        num_decoder_layers=6,
-        num_heads=8,
+        d_model= 8,#768,
+        d_ff=16,#2048,
+        num_layers=1,#6,
+        num_decoder_layers=1,#6,
+        is_encoder_decoder=True,
+        is_decoder=True,
+        num_heads=1,#8,
         decoder_start_token_id=tokenizer.pad_token_id,
     )
-
     model = MolFormerT5Decoder(config)
     return model, tokenizer
 
@@ -244,42 +212,34 @@ def create_model():
 if __name__ == "__main__":
     model, tokenizer = create_model()
 
-    # Example input
-    smiles = ["CC(=O)O", "CCO"]  # Example SMILES
-    inputs = tokenizer(smiles, padding=True, return_tensors="pt")
-    labels = tokenizer(smiles, padding=True, return_tensors="pt").input_ids
+    # Load the dataset
+    bin_file_path = "ZINK_PROCESSED/smiles.bin"
+    indices_file_path = "ZINK_PROCESSED/indices.npy"
+    dataset = SMILESDataset(bin_file_path, indices_file_path, tokenizer)
 
-    # Training step
-    outputs = model(**inputs, labels=labels)
-    print(f"Loss: {outputs.loss}")
+    training_args = TrainingArguments(
+        output_dir="output",
+        num_train_epochs=10,
+        per_device_train_batch_size=16,
+        save_total_limit=2,
+        logging_dir="logs",
+    )
 
-    # Generation
-    generated = model.generate(**inputs, max_length=50)
-    decoded = tokenizer.batch_decode(generated, skip_special_tokens=True)
-    print(f"Generated: {decoded}")
+    # Create the trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=dataset,
+    )
 
+    # Train the model
+    trainer.train()
 
+    # Evaluate the model
+    trainer.evaluate()
 
-
-
-
-
-
-
-
-
-
-
-#
-#
-#
-#
-# if __name__ == "__main__":
-#     main()
-#
-#
-
-
+    # Save the trained model
+    model.save_pretrained("path/to/save/model")
 
 
 
