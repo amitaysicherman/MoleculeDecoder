@@ -218,7 +218,7 @@ if __name__ == "__main__":
     bin_file_path = "ZINK_PROCESSED/smiles.bin"
     indices_file_path = "ZINK_PROCESSED/indices.npy"
     dataset = SMILESDataset(bin_file_path, indices_file_path, tokenizer)
-    train_size = len(dataset) - 10_000
+    train_size = len(dataset) - 10
     eval_size = 10
     train_dataset, eval_dataset = random_split(
         dataset, [train_size, eval_size]
