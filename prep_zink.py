@@ -18,7 +18,7 @@ total_smiles = 0
 for chunk in pbar:
     # Read SMILES from file
     with open(f"ZINK/{chunk}") as f:
-        smiles_ids = f.read().splitlines()
+        smiles_ids = f.read().splitlines()[1:]
 
     # Extract just the SMILES strings (first column)
     smiles = [smiles_id.split()[0] for smiles_id in smiles_ids]
@@ -61,12 +61,16 @@ print(f"Using dtype: {dtype}")
 
 
 # Optional: Verification code
+import mmap
+
 def verify_data():
     print("\nVerifying data...")
     # Load the saved data
     with open("ZINK_PROCESSED/smiles.bin", "rb") as f:
-        loaded_smiles = f.read()
+        loaded_smiles = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+    print(f"Loaded {len(loaded_smiles) / (1024 * 1024):.2f} MB of binary data")
     loaded_indices = np.load("ZINK_PROCESSED/indices.npy")
+    print(f"Loaded {loaded_indices.size} indices")
 
     # Check a few random SMILES
     for i in range(min(5, len(loaded_indices))):

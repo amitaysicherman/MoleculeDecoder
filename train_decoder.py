@@ -4,74 +4,65 @@ import torch
 from torch.utils.data import Dataset, random_split
 from transformers import T5ForConditionalGeneration, T5Config, AutoTokenizer
 from transformers import Trainer, TrainingArguments
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 import glob
 from torch.utils.data import DataLoader
+import torch
+import torch.nn as nn
+from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer,GenerationConfig
 
-def custom_collate_fn(batch):
-    """
-    Custom collate function to handle padding and stacking in the DataLoader.
-    This ensures that sequences are padded to the max length in the batch,
-    and embeddings are stacked together.
-    """
-    # Extract the input_ids, attention_mask, labels, and encoder_outputs from the batch
-    input_ids = [item['input_ids'] for item in batch]
-    attention_mask = [item['attention_mask'] for item in batch]
-    labels = [item['labels'] for item in batch]
-    encoder_outputs = [item['encoder_outputs'] for item in batch]
-
-    # Pad the input sequences
-    input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=0)
-    attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask, batch_first=True, padding_value=0)
-    labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=-100)  # -100 for ignoring padding in loss
-    encoder_outputs = torch.cat(encoder_outputs, dim=0).unsqueeze(1)  # Stack embeddings into a batch
-
-    return {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "labels": labels,
-        "encoder_outputs": encoder_outputs
-    }
-CHUCK_SIZE = 8096
+import mmap
 
 
-class MoleculeDataset(Dataset):
-    def __init__(self, data_dir, tokenizer, max_length=512):
-        self.embedding_files = glob.glob(os.path.join(data_dir, "*.npy"))
-        self.tokenizer = tokenizer
-        self.max_length = max_length
+class SMILESDataset(Dataset):
+    def __init__(self, bin_file_path, indices_file_path):
+        """
+        Initialize the dataset.
+        Args:
+            bin_file_path (str): Path to the binary file containing SMILES strings
+            indices_file_path (str): Path to the .npy file containing indices
+        """
+        # Load indices
+        self.indices = np.load(indices_file_path)
+
+        # Memory map the binary file for efficient access
+        self.bin_file = open(bin_file_path, 'rb')
+        self.mm = mmap.mmap(self.bin_file.fileno(), 0, access=mmap.ACCESS_READ)
+
+        # Calculate total size
+        self.total_size = len(self.indices)
 
     def __len__(self):
-        return len(self.embedding_files)
+        return self.total_size
 
     def __getitem__(self, idx):
-        # Load embedding
-        embedding = np.load(self.embedding_files[idx])
-        embedding = torch.from_numpy(embedding).float()
-        emb_index = int(self.embedding_files[idx].split("_")[-1].split(".")[0])
-        smile_file = self.embedding_files[idx].replace(f"_{emb_index}.npy", ".smi").replace("ZINK_NP", "ZINK")
-        with open(smile_file) as f:
-            smiles_ids = f.read().splitlines()
-        smiles = [smiles_id.split()[0] for smiles_id in smiles_ids]
-        if len(smiles) > CHUCK_SIZE:
-            end_index = min(len(smiles), (emb_index + 1) * CHUCK_SIZE)
-            smiles = smiles[emb_index * CHUCK_SIZE:end_index]
-        tokens = self.tokenizer(
-            smiles,
-            padding="max_length",
-            max_length=self.max_length,
-            truncation=True,
-            return_tensors="pt"
-        )
+        """
+        Get a SMILES string at the given index.
+        Args:
+            idx (int): Index of the SMILES string to retrieve
+        Returns:
+            str: The SMILES string
+        """
+        # Get start index
+        start_idx = self.indices[idx]
 
-        return {
-            "encoder_outputs": embedding,
-            "input_ids": tokens["input_ids"].squeeze(),
-            "attention_mask": tokens["attention_mask"].squeeze(),
-            "labels": tokens["input_ids"].squeeze()
-        }
+        # Get end index (either next index or end of file)
+        if idx + 1 < self.total_size:
+            end_idx = self.indices[idx + 1]
+        else:
+            end_idx = len(self.mm)
 
+        # Read and decode the SMILES string
+        smile = self.mm[start_idx:end_idx].decode('utf-8')
 
+        return smile
+
+    def __del__(self):
+        """Cleanup when the dataset is destroyed"""
+        if hasattr(self, 'mm'):
+            self.mm.close()
+        if hasattr(self, 'bin_file'):
+            self.bin_file.close()
 def compute_metrics(eval_pred):
     """
     Compute metrics for evaluation
@@ -121,12 +112,12 @@ def main():
     model = T5ForConditionalGeneration(config)
 
     # Setup tensorboard
-    writer = SummaryWriter('runs/molecule_decoder')
+    # writer = SummaryWriter('runs/molecule_decoder')
 
     # Create full dataset
-    full_dataset = MoleculeDataset(
-        data_dir="ZINK_NP",
-        tokenizer=tokenizer
+    full_dataset = SMILESDataset(
+        bin_file_path="ZINK_PROCESSED/smiles.bin",
+        indices_file_path="ZINK_PROCESSED/indices.npy"
     )
 
     # Split dataset into train and evaluation
@@ -161,7 +152,6 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
-        data_collator=custom_collate_fn,
     )
 
     # Train model
@@ -173,8 +163,123 @@ def main():
 
     # Save final model
     trainer.save_model("./molecule_decoder_final")
-    writer.close()
+    # writer.close()
 
 
+
+class MolFormerT5Decoder(T5ForConditionalGeneration):
+    def __init__(self, config):
+        super().__init__(config)
+
+        # Load and freeze MolFormer
+        self.molformer = AutoModel.from_pretrained(
+            "ibm/MoLFormer-XL-both-10pct",
+            trust_remote_code=True
+        )
+        for param in self.molformer.parameters():
+            param.requires_grad = False
+
+        # Simple projection if needed
+        if self.molformer.config.hidden_size != config.d_model:
+            self.proj = nn.Linear(self.molformer.config.hidden_size, config.d_model)
+        else:
+            self.proj = nn.Identity()
+
+    def forward(self, input_ids, attention_mask=None, **kwargs):
+        # Get MolFormer embedding
+        mol_outputs = self.molformer(input_ids, attention_mask=attention_mask)
+        encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
+
+        # Use parent class forward, but replace encoder_outputs
+        outputs = super().forward(
+            input_ids=None,  # No need for input_ids since we're providing encoder_outputs
+            attention_mask=attention_mask,
+            encoder_outputs=[encoder_outputs],  # T5 expects a list
+            **kwargs
+        )
+
+        return outputs
+
+    def _prepare_encoder_decoder_kwargs_for_generation(
+            self,
+            inputs_tensor: torch.Tensor,
+            model_kwargs,
+            model_input_name,
+            generation_config,
+    ):
+        # Get MolFormer embedding
+        mol_outputs = self.molformer(inputs_tensor)
+        encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
+
+        # Use parent class method, but replace encoder_outputs
+        return super()._prepare_encoder_decoder_kwargs_for_generation(
+            inputs_tensor=None,  # No need for input_ids since we're providing encoder_outputs
+            model_kwargs=model_kwargs,
+            model_input_name=model_input_name,
+            generation_config=generation_config,
+            encoder_outputs=[encoder_outputs],  # T5 expects a list
+        )
+
+
+def create_model():
+    # Initialize tokenizer
+    tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
+
+    # Initialize config
+    config = T5Config(
+        vocab_size=len(tokenizer),
+        d_model=768,
+        d_ff=2048,
+        num_layers=6,
+        num_decoder_layers=6,
+        num_heads=8,
+        decoder_start_token_id=tokenizer.pad_token_id,
+    )
+
+    model = MolFormerT5Decoder(config)
+    return model, tokenizer
+
+
+# Example usage
 if __name__ == "__main__":
-    main()
+    model, tokenizer = create_model()
+
+    # Example input
+    smiles = ["CC(=O)O", "CCO"]  # Example SMILES
+    inputs = tokenizer(smiles, padding=True, return_tensors="pt")
+    labels = tokenizer(smiles, padding=True, return_tensors="pt").input_ids
+
+    # Training step
+    outputs = model(**inputs, labels=labels)
+    print(f"Loss: {outputs.loss}")
+
+    # Generation
+    generated = model.generate(**inputs, max_length=50)
+    decoded = tokenizer.batch_decode(generated, skip_special_tokens=True)
+    print(f"Generated: {decoded}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+#
+#
+#
+#
+# if __name__ == "__main__":
+#     main()
+#
+#
+
+
+
+
+
