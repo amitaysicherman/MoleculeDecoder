@@ -24,7 +24,7 @@ def custom_collate_fn(batch):
     input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=0)
     attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask, batch_first=True, padding_value=0)
     labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=-100)  # -100 for ignoring padding in loss
-    encoder_outputs = torch.cat(encoder_outputs, dim=0)  # Stack embeddings into a batch
+    encoder_outputs = torch.cat(encoder_outputs, dim=0).unsqueeze(1)  # Stack embeddings into a batch
 
     return {
         "input_ids": input_ids,
