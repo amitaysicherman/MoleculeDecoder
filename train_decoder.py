@@ -250,7 +250,8 @@ if __name__ == "__main__":
         compute_metrics=compute_metrics,
     )
 
-    # Train the model
+    eval_results = trainer.evaluate()
+    print("Evaluation results:", eval_results)
     trainer.train()
 
     # Evaluate the model
