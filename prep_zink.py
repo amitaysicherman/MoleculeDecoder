@@ -42,5 +42,6 @@ for chunk in pbar:
         with torch.no_grad():
             outputs = model(**inputs)
         embeds = outputs.pooler_output.cpu().numpy()
-        np.save(f"ZINK_NP/{chunk}_{i}.npy", embeds)
+        chunk_name = chunk.split(".")[0]
+        np.save(f"ZINK_NP/{chunk_name}_{i}.npy", embeds)
     pbar.set_description(f"Total SMILES: {total_smiles}")
