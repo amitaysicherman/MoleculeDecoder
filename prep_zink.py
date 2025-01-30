@@ -23,7 +23,7 @@ for chunk in pbar:
         smiles_ids = f.read().splitlines()
     smiles = [smiles_id.split()[0] for smiles_id in smiles_ids]
     total_smiles += len(smiles)
-    inputs = tokenizer(smiles, padding=True, return_tensors="pt")
+    inputs = tokenizer(smiles, padding=True, return_tensors="pt").to(device)
     with torch.no_grad():
         outputs = model(**inputs)
     embeds = outputs.pooler_output.cpu().numpy()
