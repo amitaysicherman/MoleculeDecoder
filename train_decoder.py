@@ -15,6 +15,7 @@ def custom_collate_fn(batch):
     and embeddings are stacked together.
     """
     # Extract the input_ids, attention_mask, labels, and encoder_hidden_states from the batch
+    print(batch)
     input_ids = [item['input_ids'] for item in batch]
     attention_mask = [item['attention_mask'] for item in batch]
     labels = [item['labels'] for item in batch]
