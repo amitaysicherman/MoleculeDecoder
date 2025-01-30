@@ -64,7 +64,9 @@ def compute_metrics(eval_pred):
     predictions, labels = eval_pred
     # Get argmax of predictions
     predictions = np.argmax(predictions, axis=-1)
-
+    predict_text = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+    print(f"Labels: {tokenizer.batch_decode(labels, skip_special_tokens=True)}")
+    print(f"Predictions: {predict_text}")
     # Create mask for padding tokens
     mask = labels != -100
 
@@ -217,7 +219,7 @@ if __name__ == "__main__":
     indices_file_path = "ZINK_PROCESSED/indices.npy"
     dataset = SMILESDataset(bin_file_path, indices_file_path, tokenizer)
     train_size = len(dataset) - 10_000
-    eval_size = 10_000
+    eval_size = 10
     train_dataset, eval_dataset = random_split(
         dataset, [train_size, eval_size]
     )
@@ -231,7 +233,7 @@ if __name__ == "__main__":
         logging_dir='./logs',
         logging_steps=100,
         save_steps=1000,
-        eval_steps=500,  # Evaluate every 500 steps
+        eval_steps=50,  # Evaluate every 500 steps
         evaluation_strategy="steps",
         report_to=["tensorboard"],
         lr_scheduler_type="constant",  # Use constant learning rate
