@@ -78,7 +78,7 @@ def compute_metrics(eval_pred):
                         zip(predictions[mask.reshape(predictions.shape[0], -1)],
                             labels[mask.reshape(labels.shape[0], -1)])]
     sequence_accuracy = np.mean(sequence_matches)
-
+    print(f"Token Accuracy: {token_accuracy}, Sequence Accuracy: {sequence_accuracy}")
     return {
         "token_accuracy": token_accuracy,
         "sequence_accuracy": sequence_accuracy
@@ -216,20 +216,36 @@ if __name__ == "__main__":
     bin_file_path = "ZINK_PROCESSED/smiles.bin"
     indices_file_path = "ZINK_PROCESSED/indices.npy"
     dataset = SMILESDataset(bin_file_path, indices_file_path, tokenizer)
-
-    training_args = TrainingArguments(
-        output_dir="output",
-        num_train_epochs=10,
-        per_device_train_batch_size=16,
-        save_total_limit=2,
-        logging_dir="logs",
+    train_size = len(dataset) - 10_000
+    eval_size = 10_000
+    train_dataset, eval_dataset = random_split(
+        dataset, [train_size, eval_size]
     )
 
-    # Create the trainer
+    training_args = TrainingArguments(
+        output_dir="./results",
+        num_train_epochs=10,
+        per_device_train_batch_size=2,
+        per_device_eval_batch_size=2,
+        learning_rate=1e-4,  # Constant learning rate
+        logging_dir='./logs',
+        logging_steps=100,
+        save_steps=1000,
+        eval_steps=500,  # Evaluate every 500 steps
+        evaluation_strategy="steps",
+        report_to=["tensorboard"],
+        lr_scheduler_type="constant",  # Use constant learning rate
+        load_best_model_at_end=True,
+        metric_for_best_model="token_accuracy",
+    )
+
+    # Initialize trainer with evaluation
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=dataset,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        compute_metrics=compute_metrics,
     )
 
     # Train the model
