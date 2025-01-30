@@ -14,24 +14,23 @@ def custom_collate_fn(batch):
     This ensures that sequences are padded to the max length in the batch,
     and embeddings are stacked together.
     """
-    # Extract the input_ids, attention_mask, labels, and encoder_hidden_states from the batch
-    print(batch)
+    # Extract the input_ids, attention_mask, labels, and encoder_outputs from the batch
     input_ids = [item['input_ids'] for item in batch]
     attention_mask = [item['attention_mask'] for item in batch]
     labels = [item['labels'] for item in batch]
-    encoder_hidden_states = [item['encoder_hidden_states'] for item in batch]
+    encoder_outputs = [item['encoder_outputs'] for item in batch]
 
     # Pad the input sequences
     input_ids = torch.nn.utils.rnn.pad_sequence(input_ids, batch_first=True, padding_value=0)
     attention_mask = torch.nn.utils.rnn.pad_sequence(attention_mask, batch_first=True, padding_value=0)
     labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=-100)  # -100 for ignoring padding in loss
-    encoder_hidden_states = torch.stack(encoder_hidden_states, dim=0)  # Stack embeddings into a batch
+    encoder_outputs = torch.stack(encoder_outputs, dim=0)  # Stack embeddings into a batch
 
     return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
         "labels": labels,
-        "encoder_hidden_states": encoder_hidden_states
+        "encoder_outputs": encoder_outputs
     }
 CHUCK_SIZE = 8096
 
@@ -66,7 +65,7 @@ class MoleculeDataset(Dataset):
         )
 
         return {
-            "encoder_hidden_states": embedding,
+            "encoder_outputs": embedding,
             "input_ids": tokens["input_ids"].squeeze(),
             "attention_mask": tokens["attention_mask"].squeeze(),
             "labels": tokens["input_ids"].squeeze()
