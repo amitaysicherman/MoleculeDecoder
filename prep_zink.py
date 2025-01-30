@@ -28,6 +28,7 @@ def split_into_max_len(smiles):
 
 
 chunks = os.listdir("ZINK")
+os.makedirs("ZINK_NP", exist_ok=True)
 pbar = tqdm(chunks)
 total_smiles = 0
 for chunk in pbar:
@@ -41,5 +42,5 @@ for chunk in pbar:
         with torch.no_grad():
             outputs = model(**inputs)
         embeds = outputs.pooler_output.cpu().numpy()
-        np.save(f"ZINK/{chunk}_{i}.npy", embeds)
+        np.save(f"ZINK_NP/{chunk}_{i}.npy", embeds)
     pbar.set_description(f"Total SMILES: {total_smiles}")
