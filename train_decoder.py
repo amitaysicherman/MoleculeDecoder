@@ -84,11 +84,6 @@ def compute_metrics(eval_pred):
     predictions, labels = eval_pred
     # Get argmax of predictions
     predictions = np.argmax(predictions, axis=-1)
-    predict_text = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-    with open("predictions.txt", "a") as f:
-        f.write("\n".join(predict_text))
-
-    # Create mask for padding tokens
     mask = labels != -100
 
     # Calculate token accuracy (ignoring padding)
@@ -101,88 +96,11 @@ def compute_metrics(eval_pred):
                         zip(predictions[mask.reshape(predictions.shape[0], -1)],
                             labels[mask.reshape(labels.shape[0], -1)])]
     sequence_accuracy = np.mean(sequence_matches)
-    with open("metrics.txt", "a") as f:
-        f.write(f"Token Accuracy: {token_accuracy}, Sequence Accuracy: {sequence_accuracy}\n")
     return {
         "token_accuracy": token_accuracy,
         "sequence_accuracy": sequence_accuracy
     }
 
-
-# def main():
-#     # Load MolFormer tokenizer
-#     tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
-#
-#     # Initialize model config (matching roughly 50M params)
-#     config = T5Config(
-#         vocab_size=len(tokenizer),
-#         d_model=768,  # Same as MolFormer
-#         d_ff=2048,
-#         num_layers=6,  # Reduced from MolFormer's 12 to match param count
-#         num_decoder_layers=6,
-#         num_heads=8,
-#         is_decoder=True,
-#         is_encoder_decoder=False,  # We're only using the decoder
-#         decoder_start_token_id=tokenizer.pad_token_id,
-#     )
-#
-#     # Initialize model using T5ForConditionalGeneration
-#     model = T5ForConditionalGeneration(config)
-#
-#     # Setup tensorboard
-#     # writer = SummaryWriter('runs/molecule_decoder')
-#
-#     # Create full dataset
-#     full_dataset = SMILESDataset(
-#         bin_file_path="ZINK_PROCESSED/smiles.bin",
-#         indices_file_path="ZINK_PROCESSED/indices.npy"
-#     )
-#
-#     # Split dataset into train and evaluation
-#     train_size = int(0.9 * len(full_dataset))
-#     eval_size = len(full_dataset) - train_size
-#     train_dataset, eval_dataset = random_split(
-#         full_dataset, [train_size, eval_size]
-#     )
-#
-#     # Training arguments
-#     training_args = TrainingArguments(
-#         output_dir="./results",
-#         num_train_epochs=10,
-#         per_device_train_batch_size=2,
-#         per_device_eval_batch_size=2,
-#         learning_rate=1e-4,  # Constant learning rate
-#         logging_dir='./logs',
-#         logging_steps=100,
-#         save_steps=1000,
-#         eval_steps=500,  # Evaluate every 500 steps
-#         evaluation_strategy="steps",
-#         report_to=["tensorboard"],
-#         lr_scheduler_type="constant",  # Use constant learning rate
-#         load_best_model_at_end=True,
-#         metric_for_best_model="token_accuracy",
-#     )
-#
-#     # Initialize trainer with evaluation
-#     trainer = Trainer(
-#         model=model,
-#         args=training_args,
-#         train_dataset=train_dataset,
-#         eval_dataset=eval_dataset,
-#         compute_metrics=compute_metrics,
-#     )
-#
-#     # Train model
-#     trainer.train()
-#
-#     # Final evaluation
-#     final_metrics = trainer.evaluate()
-#     print("Final Evaluation Metrics:", final_metrics)
-#
-#     # Save final model
-#     trainer.save_model("./molecule_decoder_final")
-#     # writer.close()
-#
 
 class MolFormerT5Decoder(T5PreTrainedModel):
     def __init__(self, config):
@@ -205,13 +123,12 @@ class MolFormerT5Decoder(T5PreTrainedModel):
         self.decoder = T5.get_decoder()
         self.lm_head = T5.lm_head
 
-    def forward(self, input_ids, attention_mask=None):
+    def forward(self, input_ids, attention_mask=None,labels=None):
         # Get MolFormer embedding
         mol_outputs = self.molformer(input_ids, attention_mask=attention_mask)
         encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
         # Run through decoder
-        decoder_input_ids = self._shift_right(input_ids)
-        decoder_output = self.decoder(encoder_hidden_states=encoder_outputs, input_ids=decoder_input_ids)
+        decoder_output = self.decoder(encoder_hidden_states=encoder_outputs, input_ids=labels)
         lm_logits = self.lm_head(decoder_output.last_hidden_state)
         loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), input_ids.view(-1))
         return Seq2SeqLMOutput(
@@ -226,13 +143,13 @@ def create_model():
     # Initialize config
     config = T5Config(
         vocab_size=len(tokenizer),
-        d_model=8,  # 768,
-        d_ff=16,  # 2048,
-        num_layers=1,  # 6,
-        num_decoder_layers=1,  # 6,
+        d_model=768,
+        d_ff=2048,
+        num_layers=6,
+        num_decoder_layers=6,
         is_encoder_decoder=True,
         is_decoder=True,
-        num_heads=1,  # 8,
+        num_heads=8,
         decoder_start_token_id=tokenizer.pad_token_id,
     )
     model = MolFormerT5Decoder(config)
