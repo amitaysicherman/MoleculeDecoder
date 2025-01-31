@@ -171,8 +171,8 @@ if __name__ == "__main__":
     bin_file_path = "ZINK_PROCESSED/smiles.bin"
     indices_file_path = "ZINK_PROCESSED/indices.npy"
     dataset = SMILESDataset(bin_file_path, indices_file_path, tokenizer)
-    train_size = len(dataset) - 100
-    eval_size = 100
+    train_size = len(dataset) - 100_000
+    eval_size = 100_000
     train_dataset, eval_dataset = random_split(
         dataset, [train_size, eval_size]
     )
@@ -180,14 +180,14 @@ if __name__ == "__main__":
     training_args = TrainingArguments(
         output_dir="./results",
         num_train_epochs=10,
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
+        per_device_train_batch_size=128,
+        per_device_eval_batch_size=128,
         learning_rate=1e-4,  # Constant learning rate
         logging_dir='./logs',
-        logging_steps=100,
-        save_steps=1000,
+        logging_steps=1_000,
+        save_steps=5_000,
         eval_accumulation_steps=50,
-        eval_steps=50,  # Evaluate every 500 steps
+        eval_steps=5_000,  # Evaluate every 500 steps
         evaluation_strategy="steps",
         report_to=["tensorboard"],
         lr_scheduler_type="constant",  # Use constant learning rate
