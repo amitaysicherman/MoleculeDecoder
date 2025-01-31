@@ -63,7 +63,6 @@ class SMILESDataset(Dataset):
         # Read and decode the SMILES string
         smile = self.mm[start_idx:end_idx].decode('utf-8')
         tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=512, return_tensors="pt")
-        print(tokens)
         labels = tokens["input_ids"].clone()
         labels = _shift_right(labels, self.tokenizer.pad_token_id, self.tokenizer.pad_token_id)
         tokens["labels"] = labels
