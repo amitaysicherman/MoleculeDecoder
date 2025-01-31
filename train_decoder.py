@@ -65,7 +65,6 @@ class SMILESDataset(Dataset):
         tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=512, return_tensors="pt")
         tokens={k: v.squeeze(0) for k, v in tokens.items()}
         labels = tokens["input_ids"].clone()
-        labels = _shift_right(labels, self.tokenizer.pad_token_id, self.tokenizer.pad_token_id)
         tokens["labels"] = labels
 
 
@@ -130,8 +129,10 @@ class MolFormerT5Decoder(T5PreTrainedModel):
         mol_outputs = self.molformer(input_ids, attention_mask=attention_mask)
         encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
         # Run through decoder
-        decoder_output = self.decoder(encoder_hidden_states=encoder_outputs, input_ids=labels)
+        decoder_input_ids = _shift_right(input_ids, self.config.decoder_start_token_id, self.config.pad_token_id)
+        decoder_output = self.decoder(encoder_hidden_states=encoder_outputs, input_ids=decoder_input_ids)
         lm_logits = self.lm_head(decoder_output.last_hidden_state)
+
         loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1), ignore_index=-100)
         return Seq2SeqLMOutput(
             loss=loss,
