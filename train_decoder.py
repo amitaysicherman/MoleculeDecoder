@@ -211,7 +211,7 @@ class MolFormerT5Decoder(T5PreTrainedModel):
         # Run through decoder
         decoder_input_ids = self._shift_right(input_ids)
         decoder_output = self.decoder(encoder_hidden_states=encoder_outputs, input_ids=decoder_input_ids)
-        lm_logits = self.lm_head(decoder_output)
+        lm_logits = self.lm_head(decoder_output.last_hidden_state)
         loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), input_ids.view(-1))
         return Seq2SeqLMOutput(
             loss=loss,
