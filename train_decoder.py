@@ -6,7 +6,8 @@ from transformers import Trainer, TrainingArguments
 import torch.nn as nn
 from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer, GenerationConfig, \
     T5PreTrainedModel
-
+from transformers.modeling_outputs import Seq2SeqLMOutput
+from torch.nn import functional as F
 import mmap
 
 
@@ -209,9 +210,13 @@ class MolFormerT5Decoder(T5PreTrainedModel):
         encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
         # Run through decoder
         decoder_input_ids = self._shift_right(input_ids)
-        decoder_output = self.decoder(encoder_outputs=encoder_outputs, decoder_input_ids=decoder_input_ids)
+        decoder_output = self.decoder(encoder_hidden_states=[encoder_outputs], decoder_input_ids=decoder_input_ids)
         lm_logits = self.lm_head(decoder_output)
-        return lm_logits
+        loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), input_ids.view(-1))
+        return Seq2SeqLMOutput(
+            loss=loss,
+            logits=lm_logits,
+        )
 
 
 def create_model():
