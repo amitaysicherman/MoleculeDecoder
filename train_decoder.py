@@ -69,8 +69,9 @@ def compute_metrics(eval_pred):
     # Get argmax of predictions
     predictions = np.argmax(predictions, axis=-1)
     predict_text = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-    print(f"Labels: {tokenizer.batch_decode(labels, skip_special_tokens=True)}")
-    print(f"Predictions: {predict_text}")
+    with open("predictions.txt", "a") as f:
+        f.write("\n".join(predict_text))
+
     # Create mask for padding tokens
     mask = labels != -100
 
@@ -84,7 +85,8 @@ def compute_metrics(eval_pred):
                         zip(predictions[mask.reshape(predictions.shape[0], -1)],
                             labels[mask.reshape(labels.shape[0], -1)])]
     sequence_accuracy = np.mean(sequence_matches)
-    print(f"Token Accuracy: {token_accuracy}, Sequence Accuracy: {sequence_accuracy}")
+    with open("metrics.txt", "a") as f:
+        f.write(f"Token Accuracy: {token_accuracy}, Sequence Accuracy: {sequence_accuracy}\n")
     return {
         "token_accuracy": token_accuracy,
         "sequence_accuracy": sequence_accuracy
