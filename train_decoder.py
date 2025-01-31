@@ -4,7 +4,8 @@ import torch
 from torch.utils.data import Dataset, random_split
 from transformers import Trainer, TrainingArguments
 import torch.nn as nn
-from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer,GenerationConfig
+from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer, GenerationConfig, \
+    T5PreTrainedModel
 
 import mmap
 
@@ -57,6 +58,8 @@ class SMILESDataset(Dataset):
             self.mm.close()
         if hasattr(self, 'bin_file'):
             self.bin_file.close()
+
+
 def compute_metrics(eval_pred):
     """
     Compute metrics for evaluation
@@ -162,7 +165,7 @@ def compute_metrics(eval_pred):
 #     # writer.close()
 #
 
-class MolFormerT5Decoder(T5ForConditionalGeneration):
+class MolFormerT5Decoder(T5PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # Load and freeze MolFormer
@@ -170,6 +173,7 @@ class MolFormerT5Decoder(T5ForConditionalGeneration):
             "ibm/MoLFormer-XL-both-10pct",
             trust_remote_code=True
         )
+        self.config = config
         for param in self.molformer.parameters():
             param.requires_grad = False
         # Simple projection if needed
@@ -177,19 +181,38 @@ class MolFormerT5Decoder(T5ForConditionalGeneration):
             self.proj = nn.Linear(self.molformer.config.hidden_size, config.d_model)
         else:
             self.proj = nn.Identity()
+        # Initialize T5 decoder
+        T5 = T5ForConditionalGeneration(config)
+        self.decoder = T5.get_decoder()
+        self.lm_head = T5.lm_head
+
+    def _shift_right(self, input_ids):
+        decoder_start_token_id = self.config.decoder_start_token_id
+        pad_token_id = self.config.pad_token_id
+        if decoder_start_token_id is None:
+            raise ValueError(
+                "self.model.config.decoder_start_token_id has to be defined. In T5 it is usually set to the pad_token_id. "
+                "See T5 docs for more information."
+            )
+        shifted_input_ids = input_ids.new_zeros(input_ids.shape)
+        shifted_input_ids[..., 1:] = input_ids[..., :-1].clone()
+        shifted_input_ids[..., 0] = decoder_start_token_id
+        if pad_token_id is None:
+            raise ValueError("self.model.config.pad_token_id has to be defined.")
+        # replace possible -100 values in labels by `pad_token_id`
+        shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
+        return shifted_input_ids
 
     def forward(self, input_ids, attention_mask=None):
         # Get MolFormer embedding
         mol_outputs = self.molformer(input_ids, attention_mask=attention_mask)
         encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
-        # Use parent class forward, but replace encoder_outputs
-        outputs = super().forward(
-            input_ids=None,  # No need for input_ids since we're providing encoder_outputs
-            attention_mask=attention_mask,
-            encoder_outputs=[encoder_outputs],  # T5 expects a list
-            labels=input_ids,  # Use input_ids as labels for training
-        )
-        return outputs
+        # Run through decoder
+        decoder_input_ids = self._shift_right(input_ids)
+        decoder_output = self.decoder(encoder_outputs=encoder_outputs, decoder_input_ids=decoder_input_ids)
+        lm_logits = self.lm_head(decoder_output)
+        return lm_logits
+
 
 def create_model():
     # Initialize tokenizer
@@ -197,13 +220,13 @@ def create_model():
     # Initialize config
     config = T5Config(
         vocab_size=len(tokenizer),
-        d_model= 8,#768,
-        d_ff=16,#2048,
-        num_layers=1,#6,
-        num_decoder_layers=1,#6,
+        d_model=8,  # 768,
+        d_ff=16,  # 2048,
+        num_layers=1,  # 6,
+        num_decoder_layers=1,  # 6,
         is_encoder_decoder=True,
         is_decoder=True,
-        num_heads=1,#8,
+        num_heads=1,  # 8,
         decoder_start_token_id=tokenizer.pad_token_id,
     )
     model = MolFormerT5Decoder(config)
@@ -259,6 +282,3 @@ if __name__ == "__main__":
 
     # Save the trained model
     model.save_pretrained("path/to/save/model")
-
-
-
