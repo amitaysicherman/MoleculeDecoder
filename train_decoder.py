@@ -11,6 +11,17 @@ from torch.nn import functional as F
 import mmap
 
 
+def _shift_right(input_ids, decoder_start_token_id, pad_token_id):
+    shifted_input_ids = input_ids.new_zeros(input_ids.shape)
+    shifted_input_ids[..., 1:] = input_ids[..., :-1].clone()
+    shifted_input_ids[..., 0] = decoder_start_token_id
+    if pad_token_id is None:
+        raise ValueError("self.model.config.pad_token_id has to be defined.")
+    # replace possible -100 values in labels by `pad_token_id`
+    shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
+    return shifted_input_ids
+
+
 class SMILESDataset(Dataset):
     def __init__(self, bin_file_path, indices_file_path, tokenizer):
         """
@@ -51,7 +62,12 @@ class SMILESDataset(Dataset):
 
         # Read and decode the SMILES string
         smile = self.mm[start_idx:end_idx].decode('utf-8')
-        return self.tokenizer(smile, padding="max_length", truncation=True, max_length=512)
+        tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=512, return_tensors="pt")
+        print(tokens)
+        labels = tokens["input_ids"].clone()
+        labels = _shift_right(labels, self.tokenizer.pad_token_id, self.tokenizer.pad_token_id)
+        tokens["labels"] = labels
+        return tokens
 
     def __del__(self):
         """Cleanup when the dataset is destroyed"""
@@ -189,23 +205,6 @@ class MolFormerT5Decoder(T5PreTrainedModel):
         self.decoder = T5.get_decoder()
         self.lm_head = T5.lm_head
 
-    def _shift_right(self, input_ids):
-        decoder_start_token_id = self.config.decoder_start_token_id
-        pad_token_id = self.config.pad_token_id
-        if decoder_start_token_id is None:
-            raise ValueError(
-                "self.model.config.decoder_start_token_id has to be defined. In T5 it is usually set to the pad_token_id. "
-                "See T5 docs for more information."
-            )
-        shifted_input_ids = input_ids.new_zeros(input_ids.shape)
-        shifted_input_ids[..., 1:] = input_ids[..., :-1].clone()
-        shifted_input_ids[..., 0] = decoder_start_token_id
-        if pad_token_id is None:
-            raise ValueError("self.model.config.pad_token_id has to be defined.")
-        # replace possible -100 values in labels by `pad_token_id`
-        shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
-        return shifted_input_ids
-
     def forward(self, input_ids, attention_mask=None):
         # Get MolFormer embedding
         mol_outputs = self.molformer(input_ids, attention_mask=attention_mask)
@@ -271,6 +270,9 @@ if __name__ == "__main__":
         lr_scheduler_type="constant",  # Use constant learning rate
         load_best_model_at_end=True,
         metric_for_best_model="token_accuracy",
+        save_safetensors=False,
+        label_names=["labels"],
+
     )
 
     # Initialize trainer with evaluation
