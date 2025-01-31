@@ -63,9 +63,12 @@ class SMILESDataset(Dataset):
         # Read and decode the SMILES string
         smile = self.mm[start_idx:end_idx].decode('utf-8')
         tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=512, return_tensors="pt")
+        tokens={k: v.squeeze(0) for k, v in tokens.items()}
         labels = tokens["input_ids"].clone()
         labels = _shift_right(labels, self.tokenizer.pad_token_id, self.tokenizer.pad_token_id)
         tokens["labels"] = labels
+
+
         return tokens
 
     def __del__(self):
@@ -122,7 +125,7 @@ class MolFormerT5Decoder(T5PreTrainedModel):
         self.decoder = T5.get_decoder()
         self.lm_head = T5.lm_head
 
-    def forward(self, input_ids, attention_mask=None,labels=None):
+    def forward(self, input_ids, attention_mask=None, labels=None):
         # Get MolFormer embedding
         mol_outputs = self.molformer(input_ids, attention_mask=attention_mask)
         encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
@@ -165,8 +168,8 @@ if __name__ == "__main__":
     bin_file_path = "ZINK_PROCESSED/smiles.bin"
     indices_file_path = "ZINK_PROCESSED/indices.npy"
     dataset = SMILESDataset(bin_file_path, indices_file_path, tokenizer)
-    train_size = len(dataset) - 10
-    eval_size = 10
+    train_size = len(dataset) - 100_000
+    eval_size = 100_000
     train_dataset, eval_dataset = random_split(
         dataset, [train_size, eval_size]
     )
@@ -180,6 +183,7 @@ if __name__ == "__main__":
         logging_dir='./logs',
         logging_steps=100,
         save_steps=1000,
+        eval_accumulation_steps=50,
         eval_steps=50,  # Evaluate every 500 steps
         evaluation_strategy="steps",
         report_to=["tensorboard"],
