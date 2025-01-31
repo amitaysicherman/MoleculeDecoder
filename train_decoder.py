@@ -235,6 +235,8 @@ def create_model():
         decoder_start_token_id=tokenizer.pad_token_id,
     )
     model = MolFormerT5Decoder(config)
+    # print number of parameters
+    print(f"Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
     return model, tokenizer
 
 
