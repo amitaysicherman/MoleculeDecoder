@@ -65,6 +65,8 @@ class SMILESDataset(Dataset):
         tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=512, return_tensors="pt")
         tokens={k: v.squeeze(0) for k, v in tokens.items()}
         labels = tokens["input_ids"].clone()
+        #replace pad tokens with -100
+        labels[labels == self.tokenizer.pad_token_id] = -100
         tokens["labels"] = labels
 
 
