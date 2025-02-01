@@ -62,7 +62,7 @@ class SMILESDataset(Dataset):
 
         # Read and decode the SMILES string
         smile = self.mm[start_idx:end_idx].decode('utf-8')
-        tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=512, return_tensors="pt")
+        tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=256, return_tensors="pt")
         tokens={k: v.squeeze(0) for k, v in tokens.items()}
         labels = tokens["input_ids"].clone()
         #replace pad tokens with -100
@@ -186,7 +186,7 @@ if __name__ == "__main__":
         logging_dir='./logs',
         logging_steps=1_000,
         save_steps=5_000,
-        eval_accumulation_steps=50,
+        eval_accumulation_steps=1,
         eval_steps=5_000,  # Evaluate every 500 steps
         evaluation_strategy="steps",
         report_to=["tensorboard"],
