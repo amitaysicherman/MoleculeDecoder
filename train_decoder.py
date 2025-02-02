@@ -98,7 +98,7 @@ def compute_metrics(eval_pred):
     }
 
 
-class MolFormerT5Decoder(T5PreTrainedModel):
+class MolFormerT5Decoder(T5ForConditionalGeneration):
     def __init__(self, config):
         super().__init__(config)
         # Load and freeze MolFormer
