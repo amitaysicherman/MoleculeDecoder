@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, random_split
 from transformers import Trainer, TrainingArguments
 import torch.nn as nn
 from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer, GenerationConfig, \
-    T5PreTrainedModel
+    T5PreTrainedModel,PreTrainedModel
 from transformers.modeling_outputs import Seq2SeqLMOutput
 from torch.nn import functional as F
 import mmap
@@ -98,7 +98,7 @@ def compute_metrics(eval_pred):
     }
 
 
-class MolFormerT5Decoder(T5ForConditionalGeneration):
+class MolFormerT5Decoder(PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         # Load and freeze MolFormer
