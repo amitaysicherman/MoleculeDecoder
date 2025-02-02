@@ -62,7 +62,7 @@ class SMILESDataset(Dataset):
 
         # Read and decode the SMILES string
         smile = self.mm[start_idx:end_idx].decode('utf-8')
-        tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=256, return_tensors="pt")
+        tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=75, return_tensors="pt")
         tokens={k: v.squeeze(0) for k, v in tokens.items()}
         labels = tokens["input_ids"].clone()
         #replace pad tokens with -100
@@ -89,19 +89,12 @@ def compute_metrics(eval_pred):
     predictions = np.argmax(predictions, axis=-1)
     mask = labels != -100
 
-    # Calculate token accuracy (ignoring padding)
     total_tokens = mask.sum()
     correct_tokens = ((predictions == labels) & mask).sum()
     token_accuracy = correct_tokens / total_tokens
 
-    # Calculate sequence accuracy (all tokens correct)
-    sequence_matches = [(pred == label).all() for pred, label in
-                        zip(predictions[mask.reshape(predictions.shape[0], -1)],
-                            labels[mask.reshape(labels.shape[0], -1)])]
-    sequence_accuracy = np.mean(sequence_matches)
     return {
         "token_accuracy": token_accuracy,
-        "sequence_accuracy": sequence_accuracy
     }
 
 
