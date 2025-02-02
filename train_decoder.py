@@ -202,7 +202,7 @@ if __name__ == "__main__":
 
     eval_results = trainer.evaluate()
     print("Evaluation results:", eval_results)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=True)
 
     # Evaluate the model
     trainer.evaluate()
