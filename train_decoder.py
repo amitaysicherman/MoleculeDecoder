@@ -200,9 +200,9 @@ if __name__ == "__main__":
         compute_metrics=compute_metrics,
     )
 
-    eval_results = trainer.evaluate()
-    print("Evaluation results:", eval_results)
-    trainer.train(resume_from_checkpoint=True)
+    # eval_results = trainer.evaluate()
+    # print("Evaluation results:", eval_results)
+    trainer.train(resume_from_checkpoint=False)
 
     # Evaluate the model
     trainer.evaluate()
