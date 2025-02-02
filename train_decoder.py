@@ -173,13 +173,13 @@ if __name__ == "__main__":
     training_args = TrainingArguments(
         output_dir="./results",
         num_train_epochs=10,
-        per_device_train_batch_size=128,
-        per_device_eval_batch_size=128,
+        per_device_train_batch_size=1024,
+        per_device_eval_batch_size=1024,
         learning_rate=1e-4,  # Constant learning rate
         logging_dir='./logs',
         logging_steps=1_000,
         save_steps=5_000,
-        eval_accumulation_steps=1,
+        eval_accumulation_steps=2,
         eval_steps=5_000,  # Evaluate every 500 steps
         evaluation_strategy="steps",
         report_to=["tensorboard"],
