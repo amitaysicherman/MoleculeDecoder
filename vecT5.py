@@ -116,10 +116,12 @@ def train_vector_t5():
 
     # Initialize model and dataset
     model = VectorT5(config, input_dim=768, output_dim=768)  # MolFormer hidden size
+    #print number of parameters
+    print(f"Number of parameters: {sum(p.numel() for p in model.parameters()):,}")
     dataset = ReactionMolsDataset()
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=True)
-
-    optimizer = torch.optim.Adam(model.parameters())
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1024, shuffle=True)
+    # adamW optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
 
     # Training loop
     model.train()

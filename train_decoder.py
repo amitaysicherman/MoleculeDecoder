@@ -153,6 +153,9 @@ def create_model():
     model = MolFormerT5Decoder(config)
     # print number of parameters
     print(f"Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
+    # number of non trainable parameters
+    print(f"Number of non-trainable parameters: {sum(p.numel() for p in model.parameters() if not p.requires_grad):,}")
+    print(model)
     return model, tokenizer
 
 

@@ -4,7 +4,7 @@ import torch
 
 from torch.nn import functional as F
 class ReactionMolsDataset(Dataset):
-    def __init__(self, base_dir="USPTO", split="train", molformer=None, tokenizer=None):
+    def __init__(self, base_dir="USPTO", split="train"):
         self.base_dir = base_dir
         self.split = split
         self.max_seq_len=10
@@ -14,19 +14,13 @@ class ReactionMolsDataset(Dataset):
         with open(f"{base_dir}/tgt-{split}.txt") as f:
             tgt_lines = f.read().splitlines()
         self.tgt_lines = [line.replace(" ", "").split(".") for line in tgt_lines]
-        if molformer is None:
-            self.molformer = AutoModel.from_pretrained(
-                "ibm/MoLFormer-XL-both-10pct",
-                trust_remote_code=True
-            )
-            for param in self.molformer.parameters():
-                param.requires_grad = False
-        else:
-            self.molformer = molformer
-        if tokenizer is None:
-            self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
-        else:
-            self.tokenizer = tokenizer
+        self.molformer = AutoModel.from_pretrained(
+            "ibm/MoLFormer-XL-both-10pct",
+            trust_remote_code=True
+        )
+        for param in self.molformer.parameters():
+            param.requires_grad = False
+        self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
 
     def __len__(self):
         return len(self.src_lines)
