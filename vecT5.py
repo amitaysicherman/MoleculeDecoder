@@ -118,7 +118,7 @@ def eval_with_decoder(cmm_model, batch):
         return_dict=True,
     )
     encoder_outputs = outputs['logits']
-    labels = batch['decoder_input_tokens']['input_ids'][:, 0, :]
+    labels = batch['decoder_input_tokens'][:, 0, :]
     decoder_input_ids = _shift_right(labels, tokenizer.pad_token_id, tokenizer.pad_token_id)
     decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs[:, 0:1, :],
                                            input_ids=decoder_input_ids)
@@ -133,7 +133,7 @@ def eval_with_decoder(cmm_model, batch):
     mask = labels != tokenizer.pad_token_id
 
     first_prediction = predictions[0].detach().cpu()[mask[0]]
-    first_target = batch['decoder_input_tokens']['input_ids'][0][0].detach().cpu()[mask[0]]
+    first_target = batch['decoder_input_tokens'][0][0].detach().cpu()[mask[0]]
     first_prediction = tokenizer.decode(first_prediction, skip_special_tokens=True)
     first_target = tokenizer.decode(first_target, skip_special_tokens=True)
     print(f"Predicted: {first_prediction}")
@@ -180,6 +180,7 @@ def train_vector_t5():
     model.train()
     for epoch in range(num_epochs):
         for batch in dataloader:
+            batch = {k: v.to(device) for k, v in batch.items()}
             optimizer.zero_grad()
 
             outputs = model(

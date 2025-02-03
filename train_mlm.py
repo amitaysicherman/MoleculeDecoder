@@ -81,7 +81,7 @@ class ReactionMolsDataset(Dataset):
             'labels': tgt_emb,
             'attention_mask': src_mask,
             'decoder_attention_mask': decoder_mask,
-            'decoder_input_tokens': tgt_tokens,
+            'decoder_input_tokens': tgt_tokens['input_ids'],
         }
 
 
