@@ -130,6 +130,11 @@ def eval_with_decoder(cmm_model, batch):
     print(f"Loss: {loss.item():.4f}")
     # get accuracy
     predictions = lm_logits.argmax(dim=-1)
+
+    first_prediction = predictions[0].detach().cpu()
+    first_target = batch['decoder_input_tokens']['input_ids'][0].detach().cpu()
+    print(f"Predicted: {tokenizer.decode(first_prediction, skip_special_tokens=True)}")
+    print(f"Target: {tokenizer.decode(first_target, skip_special_tokens=True)}")
     mask = batch['decoder_input_tokens']['input_ids'] != tokenizer.pad_token_id
     total_tokens = mask.sum()
     correct_tokens = ((predictions == batch['decoder_input_tokens']) & mask).sum()
