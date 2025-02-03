@@ -118,26 +118,28 @@ def eval_with_decoder(cmm_model, batch):
         return_dict=True,
     )
     encoder_outputs = outputs['logits']
-
-    decoder_input_ids = _shift_right(batch['decoder_input_tokens']['input_ids'], tokenizer.pad_token_id,
-                                     tokenizer.pad_token_id)
+    labels = batch['decoder_input_tokens']['input_ids'][:, 0, :]
+    decoder_input_ids = _shift_right(labels, tokenizer.pad_token_id, tokenizer.pad_token_id)
     decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs[:, 0:1, :],
-                                           input_ids=decoder_input_ids[:, 0, :])
+                                           input_ids=decoder_input_ids)
     lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
 
-    loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), batch['decoder_input_tokens']['input_ids'].view(-1),
+    loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), labels,
                            ignore_index=tokenizer.pad_token_id)
     print(f"Loss: {loss.item():.4f}")
     # get accuracy
     predictions = lm_logits.argmax(dim=-1)
-
-    first_prediction = predictions[0].detach().cpu()
-    first_target = batch['decoder_input_tokens']['input_ids'][0][0].detach().cpu()
-    print(f"Predicted: {tokenizer.decode(first_prediction, skip_special_tokens=True)}")
-    print(f"Target: {tokenizer.decode(first_target, skip_special_tokens=True)}")
     mask = batch['decoder_input_tokens']['input_ids'] != tokenizer.pad_token_id
+
+    first_prediction = predictions[0].detach().cpu()[mask[0][0]]
+    first_target = batch['decoder_input_tokens']['input_ids'][0][0].detach().cpu()[mask[0][0]]
+    first_prediction = tokenizer.decode(first_prediction, skip_special_tokens=True)
+    first_target = tokenizer.decode(first_target, skip_special_tokens=True)
+    print(f"Predicted: {first_prediction}")
+    print(f"Target: {first_target}")
+    print("Equal: ", first_prediction == first_target)
     total_tokens = mask.sum()
-    correct_tokens = ((predictions == batch['decoder_input_tokens']) & mask).sum()
+    correct_tokens = ((predictions == labels) & mask).sum()
     token_accuracy = correct_tokens / total_tokens
     print(f"Token accuracy: {token_accuracy:.4f}")
     # Get decoder outputs
