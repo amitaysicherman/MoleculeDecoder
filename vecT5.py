@@ -201,9 +201,12 @@ def train_vector_t5():
 # Usage
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, tokenizer = create_model()
-    model.load_state_dict(torch.load("results/checkpoint-25000/pytorch_model.bin"),strict=False)
+    decoder_model, tokenizer = create_model()
+    try:
+        decoder_model.load_state_dict(torch.load("results/checkpoint-25000/pytorch_model.bin"),strict=False)
+    except:
+        print("No model found")
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device).eval()
+    decoder_model = decoder_model.to(device).eval()
 
     train_vector_t5()
