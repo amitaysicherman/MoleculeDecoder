@@ -132,8 +132,10 @@ def eval_with_decoder(cmm_model, batch):
     predictions = lm_logits.argmax(dim=-1)
     mask = labels != tokenizer.pad_token_id
 
-    first_prediction = predictions[0].detach().cpu()[mask[0]]
-    first_target = batch['decoder_input_tokens'][0][0].detach().cpu()[mask[0]]
+    # first_prediction = predictions[0].detach().cpu()[mask[0]]
+    first_prediction = predictions[0][mask[0]].detach().cpu()
+    first_target = labels[0][mask[0]].detach().cpu()
+    # first_target = batch['decoder_input_tokens'][0][0].detach().cpu()[mask[0]]
     first_prediction = tokenizer.decode(first_prediction, skip_special_tokens=True)
     first_target = tokenizer.decode(first_target, skip_special_tokens=True)
     print(f"Predicted: {first_prediction}")
