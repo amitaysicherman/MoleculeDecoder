@@ -197,6 +197,7 @@ def train_vector_t5():
                 f.write(f"{epoch}|{i}/{len(dataloader)}, Loss: {loss.item():.4f}\n")
             print(f"{epoch}|{i}/{len(dataloader)}, Loss: {loss.item():.4f}\n")
             eval_with_decoder(model, batch, log_file)
+            # exit(0)
         output_file = f"results/vector_t5_epoch_{epoch}.pt"
         torch.save(model.state_dict(), output_file)
 
