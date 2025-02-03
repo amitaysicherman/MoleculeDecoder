@@ -3,11 +3,13 @@ from transformers import AutoModel, AutoTokenizer
 import torch
 
 from torch.nn import functional as F
+
+
 class ReactionMolsDataset(Dataset):
     def __init__(self, base_dir="USPTO", split="train"):
         self.base_dir = base_dir
         self.split = split
-        self.max_seq_len=10
+        self.max_seq_len = 10
         with open(f"{base_dir}/src-{split}.txt") as f:
             src_lines = f.read().splitlines()
         self.src_lines = [line.replace(" ", "").split(".") for line in src_lines]
@@ -40,10 +42,10 @@ class ReactionMolsDataset(Dataset):
     #     return src_emb, tgt_emb
     def _get_embeddings(self, smiles_list):
         """Tokenizes and gets embeddings from MoLFormer"""
-        tokens = self.tokenizer(smiles_list, padding="longest", truncation=True, max_length=75, return_tensors="pt")
+        tokens = self.tokenizer(smiles_list, padding="max_length", truncation=True, max_length=75, return_tensors="pt")
         with torch.no_grad():
             outputs = self.molformer(**tokens)
-        return outputs.pooler_output  # (seq_len, hidden_dim)
+        return outputs.pooler_output, tokens  # (seq_len, hidden_dim)
 
     def _pad_and_mask(self, embeddings):
         """Pads embeddings to max_seq_len and creates a proper attention mask"""
@@ -57,8 +59,8 @@ class ReactionMolsDataset(Dataset):
         src, tgt = self.src_lines[idx], self.tgt_lines[idx]
 
         # Get embeddings and masks
-        src_emb = self._get_embeddings(src)
-        tgt_emb = self._get_embeddings(tgt)
+        src_emb, src_tokens = self._get_embeddings(src)
+        tgt_emb, tgt_tokens = self._get_embeddings(tgt)
 
         # Pad embeddings and create proper masks
         src_emb, src_mask = self._pad_and_mask(src_emb)
@@ -78,8 +80,10 @@ class ReactionMolsDataset(Dataset):
             'decoder_input_vectors': decoder_input,
             'labels': tgt_emb,
             'attention_mask': src_mask,
-            'decoder_attention_mask': decoder_mask
+            'decoder_attention_mask': decoder_mask,
+            'decoder_input_tokens': tgt_tokens,
         }
+
 
 if __name__ == "__main__":
     dataset = ReactionMolsDataset()
