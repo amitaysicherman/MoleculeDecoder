@@ -120,33 +120,37 @@ def eval_with_decoder(cmm_model, batch,log_file):
     encoder_outputs = outputs['logits']
     labels = batch['decoder_input_tokens'][:, 0, :]
     decoder_input_ids = _shift_right(labels, tokenizer.pad_token_id, tokenizer.pad_token_id)
-    decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs[:, 0:1, :],
-                                           input_ids=decoder_input_ids)
+    decoder_output = decoder_model.decoder(
+        encoder_hidden_states=encoder_outputs[:, :1, :],
+        input_ids=decoder_input_ids,
+    )
     lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
 
-    loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1),
-                           ignore_index=tokenizer.pad_token_id)
+    # Compute loss
+    loss = F.cross_entropy(
+        lm_logits.view(-1, lm_logits.size(-1)),
+        labels.view(-1),
+        ignore_index=tokenizer.pad_token_id,
+    )
+
+    # Compute predictions and accuracy
     predictions = lm_logits.argmax(dim=-1)
     mask = labels != tokenizer.pad_token_id
-
-    # first_prediction = predictions[0].detach().cpu()[mask[0]]
-    first_prediction = predictions[0][mask[0]].detach().cpu()
-    first_target = labels[0][mask[0]].detach().cpu()
-    # first_target = batch['decoder_input_tokens'][0][0].detach().cpu()[mask[0]]
-    first_prediction = tokenizer.decode(first_prediction, skip_special_tokens=True)
-    first_target = tokenizer.decode(first_target, skip_special_tokens=True)
     total_tokens = mask.sum()
     correct_tokens = ((predictions == labels) & mask).sum()
-    token_accuracy = correct_tokens / total_tokens
+    token_accuracy = correct_tokens.float() / total_tokens.float()
 
+    # Decode first prediction and target
+    first_prediction = tokenizer.decode(predictions[0][mask[0]].detach().cpu(), skip_special_tokens=True)
+    first_target = tokenizer.decode(labels[0][mask[0]].detach().cpu(), skip_special_tokens=True)
+
+    # Log results
     with open(log_file, "a") as f:
         f.write(f"Loss: {loss.item():.4f}\n")
         f.write(f"Predicted: {first_prediction}\n")
         f.write(f"Target: {first_target}\n")
-        f.write("Equal: ", first_prediction == first_target)
+        f.write(f"Equal: {first_prediction == first_target}\n")
         f.write(f"Token accuracy: {token_accuracy:.4f}\n")
-
-
 # Training example
 def train_vector_t5():
     # Model configuration
