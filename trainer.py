@@ -106,49 +106,47 @@ class Trainer:
                 # Move batch to device
                 batch = {k: v.to(self.device) for k, v in batch.items()}
                 
-                # Forward pass with mixed precision
-                with autocast():
-                    # First get target embeddings for labels and decoder input
-                    with torch.no_grad():
-                        tgt_embeddings, tgt_attention_mask = self.model._get_mol_embeddings(
-                            batch['tgt_input_ids'],
-                            batch['tgt_token_attention_mask'],
-                            batch['tgt_mol_attention_mask']
-                        )
-                    
-                    # Create shifted decoder inputs
-                    decoder_inputs = self._prepare_decoder_inputs(tgt_embeddings)
-                    
-                    # Forward pass
-                    outputs = self.model(
-                        src_input_ids=batch['src_input_ids'],
-                        src_token_attention_mask=batch['src_token_attention_mask'],
-                        src_mol_attention_mask=batch['src_mol_attention_mask'],
-                        tgt_input_ids=batch['tgt_input_ids'],
-                        tgt_token_attention_mask=batch['tgt_token_attention_mask'],
-                        tgt_mol_attention_mask=batch['tgt_mol_attention_mask'],
-                        labels=tgt_embeddings,  # Use target embeddings as labels
-                        return_dict=True,
+                # First get target embeddings for labels and decoder input
+                with torch.no_grad():
+                    tgt_embeddings, tgt_attention_mask = self.model._get_mol_embeddings(
+                        batch['tgt_input_ids'],
+                        batch['tgt_token_attention_mask'],
+                        batch['tgt_mol_attention_mask']
                     )
-                    
-                    loss = outputs['loss'] / self.gradient_accumulation_steps
-                
-                # Backward pass with gradient scaling
-                self.scaler.scale(loss).backward()
-                
-                if (i + 1) % self.gradient_accumulation_steps == 0:
-                    self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                    self.optimizer.zero_grad()
-                
-                total_loss += loss.item() * self.gradient_accumulation_steps
-                pbar.set_postfix({'loss': total_loss / (i + 1)})
-                
-                # Log metrics
-                if i % 100 == 0:
-                    logging.info(f"Epoch {epoch} - Batch {i}/{len(self.train_loader)} - Loss: {loss.item() * self.gradient_accumulation_steps:.4f}")
+
+                # Create shifted decoder inputs
+                decoder_inputs = self._prepare_decoder_inputs(tgt_embeddings)
+
+                # Forward pass
+                outputs = self.model(
+                    src_input_ids=batch['src_input_ids'],
+                    src_token_attention_mask=batch['src_token_attention_mask'],
+                    src_mol_attention_mask=batch['src_mol_attention_mask'],
+                    tgt_input_ids=batch['tgt_input_ids'],
+                    tgt_token_attention_mask=batch['tgt_token_attention_mask'],
+                    tgt_mol_attention_mask=batch['tgt_mol_attention_mask'],
+                    labels=tgt_embeddings,  # Use target embeddings as labels
+                    return_dict=True,
+                )
+
+                loss = outputs['loss'] / self.gradient_accumulation_steps
+
+            # Backward pass with gradient scaling
+            self.scaler.scale(loss).backward()
+
+            if (i + 1) % self.gradient_accumulation_steps == 0:
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad()
+
+            total_loss += loss.item() * self.gradient_accumulation_steps
+            pbar.set_postfix({'loss': total_loss / (i + 1)})
+
+            # Log metrics
+            if i % 100 == 0:
+                logging.info(f"Epoch {epoch} - Batch {i}/{len(self.train_loader)} - Loss: {loss.item() * self.gradient_accumulation_steps:.4f}")
         
         avg_loss = total_loss / len(self.train_loader)
         logging.info(f"Epoch {epoch} - Average Loss: {avg_loss:.4f}")
