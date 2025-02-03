@@ -107,7 +107,7 @@ class VectorT5(T5PreTrainedModel):
         return (loss, sequence_output) if loss is not None else sequence_output
 
 
-def eval_with_decoder(cmm_model, batch):
+def eval_with_decoder(cmm_model, batch,log_file):
     # Get encoder outputs
     outputs = cmm_model(
         input_vectors=batch['input_vectors'],
@@ -126,9 +126,6 @@ def eval_with_decoder(cmm_model, batch):
 
     loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1),
                            ignore_index=tokenizer.pad_token_id)
-
-    print(f"Loss: {loss.item():.4f}")
-    # get accuracy
     predictions = lm_logits.argmax(dim=-1)
     mask = labels != tokenizer.pad_token_id
 
@@ -138,23 +135,16 @@ def eval_with_decoder(cmm_model, batch):
     # first_target = batch['decoder_input_tokens'][0][0].detach().cpu()[mask[0]]
     first_prediction = tokenizer.decode(first_prediction, skip_special_tokens=True)
     first_target = tokenizer.decode(first_target, skip_special_tokens=True)
-    print(f"Predicted: {first_prediction}")
-    print(f"Target: {first_target}")
-    print("Equal: ", first_prediction == first_target)
     total_tokens = mask.sum()
     correct_tokens = ((predictions == labels) & mask).sum()
     token_accuracy = correct_tokens / total_tokens
-    print(f"Token accuracy: {token_accuracy:.4f}")
-    # Get decoder outputs
-    # decoder_outputs = decoder_model(
-    #     input_ids=batch['decoder_input_ids'],
-    #     attention_mask=batch['decoder_attention_mask'],
-    #     encoder_hidden_states=encoder_outputs['last_hidden_state'],
-    #     labels=batch['labels'],
-    #     return_dict=True,
-    # )
 
-    # return decoder_outputs
+    with open(log_file, "a") as f:
+        f.write(f"Loss: {loss.item():.4f}\n")
+        f.write(f"Predicted: {first_prediction}\n")
+        f.write(f"Target: {first_target}\n")
+        f.write("Equal: ", first_prediction == first_target)
+        f.write(f"Token accuracy: {token_accuracy:.4f}\n")
 
 
 # Training example
@@ -177,7 +167,7 @@ def train_vector_t5():
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1024, shuffle=True)
     # adamW optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
-
+    log_file="results/vector_t5_log.txt"
     # Training loop
     model.train()
     for epoch in range(num_epochs):
@@ -197,9 +187,12 @@ def train_vector_t5():
             loss = outputs['loss']
             loss.backward()
             optimizer.step()
-
+            with open(log_file, "a") as f:
+                f.write(f"Epoch {epoch}, Loss: {loss.item():.4f}\n")
             print(f"Epoch {epoch}, Loss: {loss.item():.4f}")
-            eval_with_decoder(model, batch)
+            eval_with_decoder(model, batch,log_file)
+        output_file = f"results/vector_t5_epoch_{epoch}.pt"
+        torch.save(model.state_dict(), output_file)
 
 
 # Usage
