@@ -107,7 +107,7 @@ class VectorT5(T5PreTrainedModel):
         return (loss, sequence_output) if loss is not None else sequence_output
 
 
-def eval_with_decoder(cmm_model, batch,log_file):
+def eval_with_decoder(cmm_model, batch, log_file):
     # Get encoder outputs
     outputs = cmm_model(
         input_vectors=batch['input_vectors'],
@@ -151,6 +151,8 @@ def eval_with_decoder(cmm_model, batch,log_file):
         f.write(f"Target: {first_target}\n")
         f.write(f"Equal: {first_prediction == first_target}\n")
         f.write(f"Token accuracy: {token_accuracy:.4f}\n")
+
+
 # Training example
 def train_vector_t5():
     # Model configuration
@@ -171,11 +173,11 @@ def train_vector_t5():
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1024, shuffle=True)
     # adamW optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
-    log_file="results/vector_t5_log.txt"
+    log_file = "results/vector_t5_log.txt"
     # Training loop
     model.train()
     for epoch in range(num_epochs):
-        for batch in dataloader:
+        for i, batch in enumerate(dataloader):
             batch = {k: v.to(device) for k, v in batch.items()}
             optimizer.zero_grad()
 
@@ -192,9 +194,9 @@ def train_vector_t5():
             loss.backward()
             optimizer.step()
             with open(log_file, "a") as f:
-                f.write(f"Epoch {epoch}, Loss: {loss.item():.4f}\n")
-            print(f"Epoch {epoch}, Loss: {loss.item():.4f}")
-            eval_with_decoder(model, batch,log_file)
+                f.write(f"{epoch}|{i}/{len(dataloader)}, Loss: {loss.item():.4f}\n")
+            print(f"{epoch}|{i}/{len(dataloader)}, Loss: {loss.item():.4f}\n")
+            eval_with_decoder(model, batch, log_file)
         output_file = f"results/vector_t5_epoch_{epoch}.pt"
         torch.save(model.state_dict(), output_file)
 
@@ -204,7 +206,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     decoder_model, tokenizer = create_model()
     try:
-        decoder_model.load_state_dict(torch.load("results/checkpoint-25000/pytorch_model.bin"),strict=False)
+        decoder_model.load_state_dict(torch.load("results/checkpoint-25000/pytorch_model.bin"), strict=False)
     except:
         print("No model found")
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
