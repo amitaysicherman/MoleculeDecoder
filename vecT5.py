@@ -124,8 +124,9 @@ def eval_with_decoder(cmm_model, batch):
                                            input_ids=decoder_input_ids)
     lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
 
-    loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), labels,
+    loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1),
                            ignore_index=tokenizer.pad_token_id)
+
     print(f"Loss: {loss.item():.4f}")
     # get accuracy
     predictions = lm_logits.argmax(dim=-1)
