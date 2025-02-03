@@ -64,23 +64,23 @@ class VectorT5(T5PreTrainedModel):
         
         return embeddings, mol_attention_mask
 
-    def _append_eos(self, x, attention_mask=None):
-        if attention_mask is None:
-            return x, attention_mask
-
-        # Find first padding position in each sequence
-        first_pad_pos = attention_mask.sum(dim=1, keepdim=True)  # Shape: (batch_size, 1)
-
-        # Replace first padding token with EOS embedding
-        eos_pos = torch.arange(x.size(1), device=x.device).unsqueeze(0)  # Shape: (1, seq_len)
-        is_eos = (eos_pos == first_pad_pos)  # Shape: (batch_size, seq_len)
-
-        # Create EOS embeddings for each sequence
-        eos = self.eos_embedding.expand(x.shape[0], -1, -1)  # Shape: (batch_size, 1, hidden_size)
-        x = torch.where(is_eos.unsqueeze(-1), eos, x)
-
-        return x, attention_mask
-
+    # def _append_eos(self, x, attention_mask=None):
+    #     if attention_mask is None:
+    #         return x, attention_mask
+    #
+    #     # Find first padding position in each sequence
+    #     first_pad_pos = attention_mask.sum(dim=1, keepdim=True)  # Shape: (batch_size, 1)
+    #
+    #     # Replace first padding token with EOS embedding
+    #     eos_pos = torch.arange(x.size(1), device=x.device).unsqueeze(0)  # Shape: (1, seq_len)
+    #     is_eos = (eos_pos == first_pad_pos)  # Shape: (batch_size, seq_len)
+    #
+    #     # Create EOS embeddings for each sequence
+    #     eos = self.eos_embedding.expand(x.shape[0], -1, -1)  # Shape: (batch_size, 1, hidden_size)
+    #     x = torch.where(is_eos.unsqueeze(-1), eos, x)
+    #
+    #     return x, attention_mask
+    #
     def forward(
         self,
         src_input_ids,
@@ -102,11 +102,11 @@ class VectorT5(T5PreTrainedModel):
         # Project embeddings to model dimension
         encoder_hidden_states = self.input_projection(src_embeddings)
         
-        # Add EOS to encoder inputs
-        encoder_hidden_states, src_attention_mask = self._append_eos(
-            encoder_hidden_states, 
-            src_attention_mask
-        )
+        # # Add EOS to encoder inputs
+        # encoder_hidden_states, src_attention_mask = self._append_eos(
+        #     encoder_hidden_states,
+        #     src_attention_mask
+        # )
         
         # Encoder
         encoder_outputs = self.encoder(

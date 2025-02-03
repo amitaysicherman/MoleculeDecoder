@@ -19,16 +19,20 @@ class ReactionMolsDataset(Dataset):
         with open(f"{base_dir}/src-{split}.txt") as f:
             src_lines = f.read().splitlines()
         self.src_lines = [line.replace(" ", "").split(".") for line in src_lines]
-
+        src_too_long = [len(s) > self.max_seq_len for s in self.src_lines]
         with open(f"{base_dir}/tgt-{split}.txt") as f:
             tgt_lines = f.read().splitlines()
         self.tgt_lines = [line.replace(" ", "").split(".") for line in tgt_lines]
-
+        tgt_too_long = [len(t) > self.max_seq_len for t in self.tgt_lines]
+        line_too_long = [s or t for s, t in zip(src_too_long, tgt_too_long)]
+        self.src_lines = [s for s, too_long in zip(self.src_lines, line_too_long) if not too_long]
+        self.tgt_lines = [t for t, too_long in zip(self.tgt_lines, line_too_long) if not too_long]
         # Initialize tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
             trust_remote_code=True
         )
+
 
     def _tokenize_and_pad(self, smiles_list):
         """Tokenize list of SMILES and pad to max_seq_len"""

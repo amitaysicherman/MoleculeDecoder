@@ -27,15 +27,15 @@ class Trainer:
             train_dataset,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=4,
-            pin_memory=True
+            num_workers=1,
+            pin_memory=False
         )
         self.val_loader = DataLoader(
             val_dataset,
             batch_size=batch_size,
             shuffle=False,
-            num_workers=4,
-            pin_memory=True
+            num_workers=1,
+            pin_memory=False
         )
         self.optimizer = torch.optim.AdamW(
             model.parameters(),
