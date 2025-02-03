@@ -168,6 +168,7 @@ def train_vector_t5():
 
     # Initialize model and dataset
     model = VectorT5(config, input_dim=768, output_dim=768)  # MolFormer hidden size
+    model = model.to(device)
     # print number of parameters
     print(f"Number of parameters: {sum(p.numel() for p in model.parameters()):,}")
     dataset = ReactionMolsDataset()
