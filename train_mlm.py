@@ -4,6 +4,8 @@ import torch
 
 from torch.nn import functional as F
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class ReactionMolsDataset(Dataset):
     def __init__(self, base_dir="USPTO", split="train"):
@@ -43,6 +45,11 @@ class ReactionMolsDataset(Dataset):
     def _get_embeddings(self, smiles_list):
         """Tokenizes and gets embeddings from MoLFormer"""
         tokens = self.tokenizer(smiles_list, padding="max_length", truncation=True, max_length=75, return_tensors="pt")
+        tokens = {k: v.to(device) for k, v in tokens.items()}  # Move tokens to GPU
+
+        if self.molformer.device != device:
+            self.molformer = self.molformer.to(device)  # Move MolFormer to GPU once
+
         with torch.no_grad():
             outputs = self.molformer(**tokens)
         return outputs.pooler_output, tokens  # (seq_len, hidden_dim)
