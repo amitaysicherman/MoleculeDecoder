@@ -53,7 +53,7 @@ class ReactionMolsDataset(Dataset):
 
     def _pad_and_mask(self, embeddings):
         """Pads embeddings to max_seq_len and creates a proper attention mask"""
-        seq_len = embeddings.shape[1]  # Get actual length
+        seq_len = embeddings.shape[0]  # Get actual length
         embeddings = F.pad(embeddings, (0, 0, 0, self.max_seq_len - seq_len))  # Pad to max_seq_len
         mask = torch.zeros(self.max_seq_len, dtype=torch.long)
         mask[:seq_len] = 1  # Mark real tokens as 1
