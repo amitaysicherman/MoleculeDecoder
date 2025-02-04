@@ -80,8 +80,6 @@ def main():
         batch_size=args.batch_size,
         num_epochs=args.epochs,
         lr=args.lr,
-        weight_decay=args.weight_decay,
-        gradient_accumulation_steps=args.grad_acc_steps,
         device="cuda" if torch.cuda.is_available() else "cpu",
         output_dir=args.output_dir
     )

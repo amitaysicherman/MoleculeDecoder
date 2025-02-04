@@ -15,8 +15,6 @@ class Trainer:
         batch_size=32,
         num_epochs=10,
         lr=1e-4,
-        weight_decay=0.01,
-        gradient_accumulation_steps=1,
         device="cuda",
         output_dir="outputs"
     ):
@@ -38,7 +36,6 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=lr,
-            weight_decay=weight_decay
         )
         self.device = device
         self.num_epochs = num_epochs
@@ -58,9 +55,7 @@ class Trainer:
         self.log_hyperparameters({
             'batch_size': batch_size,
             'num_epochs': num_epochs,
-            'lr': lr,
-            'weight_decay': weight_decay,
-            'gradient_accumulation_steps': gradient_accumulation_steps,
+            'lr': lr
         })
         
     def setup_logging(self):
