@@ -5,7 +5,7 @@ import os
 
 
 class ReactionMolsDataset(Dataset):
-    def __init__(self, base_dir="USPTO", split="train"):
+    def __init__(self, base_dir="USPTO", split="train", debug=False):
         if not os.path.exists(base_dir):
             raise ValueError(f"Directory {base_dir} does not exist")
         if split not in ["train", "valid", "test"]:
@@ -27,6 +27,9 @@ class ReactionMolsDataset(Dataset):
         line_too_long = [s or t for s, t in zip(src_too_long, tgt_too_long)]
         self.src_lines = [s for s, too_long in zip(self.src_lines, line_too_long) if not too_long]
         self.tgt_lines = [t for t, too_long in zip(self.tgt_lines, line_too_long) if not too_long]
+        if debug:
+            self.src_lines = self.src_lines[:1]
+            self.tgt_lines = self.tgt_lines[:1]
         # Initialize tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",

@@ -7,8 +7,6 @@ from dataset import ReactionMolsDataset
 from model import VectorT5
 from trainer import Trainer
 
-IS_LOCAL = os.getcwd() == "/Users/amitay.s/PycharmProjects/MoleculeDecoder"
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train Vector T5 Model')
@@ -30,6 +28,8 @@ def parse_args():
                         help='Number of workers for data loading')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed')
+    parser.add_argument('--debug', action='store_true',
+                        help='Run in debug mode')
     return parser.parse_args()
 
 
@@ -45,17 +45,17 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Initialize datasets
-    train_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="train")
-    val_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="valid")
+    train_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="train", debug=args.debug)
+    val_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="valid", debug=args.debug)
 
     # Initialize model
-    if IS_LOCAL:
+    if args.debug:
         config = T5Config(
-            d_model=16,
-            d_kv=16,
-            d_ff=32,
-            num_layers=1,
-            num_heads=1,
+            d_model=64,
+            d_kv=32,
+            d_ff=128,
+            num_layers=2,
+            num_heads=2,
         )
     else:
         config = T5Config(
@@ -77,9 +77,9 @@ def main():
         model=model,
         train_dataset=train_dataset,
         val_dataset=val_dataset,
-        batch_size=args.batch_size,
-        num_epochs=args.epochs,
-        lr=args.lr,
+        batch_size=args.batch_size if not args.debug else 1,
+        num_epochs=args.epochs if not args.debug else 200,
+        lr=args.lr if not args.debug else 1e-3,
         device="cuda" if torch.cuda.is_available() else "cpu",
         output_dir=args.output_dir
     )

@@ -86,15 +86,8 @@ class Trainer:
             for i, batch in enumerate(pbar):
                 # Move batch to device
                 batch = {k: v.to(self.device) for k, v in batch.items()}
-                
-                # First get target embeddings for labels and decoder input
-                with torch.no_grad():
-                    tgt_embeddings, tgt_attention_mask = self.model._get_mol_embeddings(
-                        batch['tgt_input_ids'],
-                        batch['tgt_token_attention_mask'],
-                        batch['tgt_mol_attention_mask']
-                    )
 
+                self.optimizer.zero_grad()
                 # Forward pass
                 outputs = self.model(
                     src_input_ids=batch['src_input_ids'],
@@ -103,7 +96,6 @@ class Trainer:
                     tgt_input_ids=batch['tgt_input_ids'],
                     tgt_token_attention_mask=batch['tgt_token_attention_mask'],
                     tgt_mol_attention_mask=batch['tgt_mol_attention_mask'],
-                    labels=tgt_embeddings,  # Use target embeddings as labels
                     return_dict=True,
                 )
 
@@ -112,7 +104,6 @@ class Trainer:
 
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 self.optimizer.step()
-                self.optimizer.zero_grad()
 
                 total_loss += loss.item()
                 pbar.set_postfix({'loss': total_loss / (i + 1)})
@@ -133,13 +124,7 @@ class Trainer:
             for batch in tqdm(self.val_loader, desc="Validating"):
                 batch = {k: v.to(self.device) for k, v in batch.items()}
                 
-                # Get target embeddings for labels
-                tgt_embeddings, _ = self.model._get_mol_embeddings(
-                    batch['tgt_input_ids'],
-                    batch['tgt_token_attention_mask'],
-                    batch['tgt_mol_attention_mask']
-                )
-                
+
                 outputs = self.model(
                     src_input_ids=batch['src_input_ids'],
                     src_token_attention_mask=batch['src_token_attention_mask'],
@@ -147,7 +132,6 @@ class Trainer:
                     tgt_input_ids=batch['tgt_input_ids'],
                     tgt_token_attention_mask=batch['tgt_token_attention_mask'],
                     tgt_mol_attention_mask=batch['tgt_mol_attention_mask'],
-                    labels=tgt_embeddings,
                     return_dict=True,
                 )
                 total_loss += outputs['loss'].item()
@@ -161,6 +145,7 @@ class Trainer:
         
         for epoch in range(self.num_epochs):
             train_loss = self.train_epoch(epoch)
+            print(f"Epoch {epoch} - Train Loss: {train_loss:.4f}")
             val_loss = self.validate()
 
             # Save checkpoint
