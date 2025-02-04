@@ -14,11 +14,7 @@ class VectorT5(T5PreTrainedModel):
         )
         for param in self.molformer.parameters():
             param.requires_grad = False
-        
-        # Modify config for vector inputs
-        config.vocab_size = 1  # Not used but required
-        config.d_model = 512  # Can be adjusted
-        
+        self.molformer.eval()
         # Input/Output projections
         self.input_projection = nn.Linear(input_dim, config.d_model)
         self.output_projection = nn.Linear(config.d_model, output_dim)
@@ -61,7 +57,6 @@ class VectorT5(T5PreTrainedModel):
         
         # Reshape back to original dimensions
         embeddings = embeddings.view(batch_size, max_seq_len, -1)  # (batch_size, max_seq_len, hidden_size)
-        
         return embeddings, mol_attention_mask
 
     # def _append_eos(self, x, attention_mask=None):
@@ -105,10 +100,8 @@ class VectorT5(T5PreTrainedModel):
             src_token_attention_mask, 
             src_mol_attention_mask
         )
-        
         # Project embeddings to model dimension
         encoder_hidden_states = self.input_projection(src_embeddings)
-        
         # # Add EOS to encoder inputs
         # encoder_hidden_states, src_attention_mask = self._append_eos(
         #     encoder_hidden_states,
@@ -122,7 +115,6 @@ class VectorT5(T5PreTrainedModel):
             return_dict=return_dict,
             use_cache=False,
         )
-        
         if tgt_input_ids is None:
             # During inference, start with EOS token
             decoder_inputs = self.eos_embedding.repeat(src_input_ids.shape[0], 1, 1)
@@ -149,12 +141,29 @@ class VectorT5(T5PreTrainedModel):
         )
         
         sequence_output = self.output_projection(decoder_outputs[0])
-        
+
         loss = None
         if labels is not None:
-            loss_fct = nn.MSELoss()
-            loss = loss_fct(sequence_output, labels)
-        
+            loss_fct = nn.MSELoss(reduction='none')
+            # Calculate MSE loss for each position
+            position_losses = loss_fct(sequence_output, labels)
+
+            # Apply mask to zero out loss for padding positions
+            if tgt_mol_attention_mask is not None:
+                # Expand mask to match loss dimensions if needed
+                mask = tgt_mol_attention_mask.unsqueeze(-1).expand_as(position_losses)
+                position_losses = position_losses * mask
+
+                # Calculate mean loss over non-padding positions
+                total_active_elements = mask.sum()
+                if total_active_elements > 0:
+                    loss = position_losses.sum() / total_active_elements
+                else:
+                    loss = position_losses.sum() * 0.0  # Return 0 loss if all positions are masked
+            else:
+                # If no mask provided, take mean over all positions
+                loss = position_losses.mean()
+
         if return_dict:
             return {
                 'loss': loss,

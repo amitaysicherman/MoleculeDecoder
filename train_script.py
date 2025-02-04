@@ -7,6 +7,8 @@ from dataset import ReactionMolsDataset
 from model import VectorT5
 from trainer import Trainer
 
+IS_LOCAL = os.getcwd() == "/Users/amitay.s/PycharmProjects/MoleculeDecoder"
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train Vector T5 Model')
@@ -47,13 +49,22 @@ def main():
     val_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="valid")
 
     # Initialize model
-    config = T5Config(
-        d_model=512,
-        d_kv=64,
-        d_ff=2048,
-        num_layers=6,
-        num_heads=8,
-    )
+    if IS_LOCAL:
+        config = T5Config(
+            d_model=16,
+            d_kv=16,
+            d_ff=32,
+            num_layers=1,
+            num_heads=1,
+        )
+    else:
+        config = T5Config(
+            d_model=512,
+            d_kv=64,
+            d_ff=2048,
+            num_layers=6,
+            num_heads=8,
+        )
     model = VectorT5(config, input_dim=768, output_dim=768)
 
     # Print model parameters
@@ -61,7 +72,6 @@ def main():
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,}")
-
     # Initialize trainer
     trainer = Trainer(
         model=model,
