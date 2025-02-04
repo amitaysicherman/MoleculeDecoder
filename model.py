@@ -42,7 +42,7 @@ class VectorT5(T5PreTrainedModel):
         flat_attention_mask = token_attention_mask.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
         
         # Process through MolFormer in chunks to avoid OOM
-        chunk_size = 1024  # Adjust based on your GPU memory
+        chunk_size = 2048  # Adjust based on your GPU memory
         all_embeddings = []
         
         for i in range(0, flat_input_ids.size(0), chunk_size):
