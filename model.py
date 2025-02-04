@@ -166,7 +166,6 @@ class VectorT5(T5PreTrainedModel):
 
             # Calculate mean loss over non-padding positions
             total_active_elements = mask.sum()
-            print("Total active elements: ", total_active_elements)
             if total_active_elements > 0:
                 loss = position_losses.sum() / total_active_elements
             else:
