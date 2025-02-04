@@ -42,13 +42,7 @@ class Trainer:
             lr=lr,
             weight_decay=weight_decay
         )
-        self.scheduler = CosineAnnealingLR(
-            self.optimizer,
-            T_max=num_epochs
-        )
-        self.scaler = GradScaler()
         self.device = device
-        self.gradient_accumulation_steps = gradient_accumulation_steps
         self.num_epochs = num_epochs
         
         # Setup logging
@@ -129,24 +123,19 @@ class Trainer:
                     return_dict=True,
                 )
 
-                loss = outputs['loss'] / self.gradient_accumulation_steps
+                loss = outputs['loss']
+                loss.backward()
 
-            # Backward pass with gradient scaling
-            self.scaler.scale(loss).backward()
-
-            if (i + 1) % self.gradient_accumulation_steps == 0:
-                self.scaler.unscale_(self.optimizer)
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
+                self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            total_loss += loss.item() * self.gradient_accumulation_steps
-            pbar.set_postfix({'loss': total_loss / (i + 1)})
+                total_loss += loss.item()
+                pbar.set_postfix({'loss': total_loss / (i + 1)})
 
             # Log metrics
             if i % 100 == 0:
-                logging.info(f"Epoch {epoch} - Batch {i}/{len(self.train_loader)} - Loss: {loss.item() * self.gradient_accumulation_steps:.4f}")
+                logging.info(f"Epoch {epoch} - Batch {i}/{len(self.train_loader)} - Loss: {loss.item() :.4f}")
         
         avg_loss = total_loss / len(self.train_loader)
         logging.info(f"Epoch {epoch} - Average Loss: {avg_loss:.4f}")
@@ -189,14 +178,12 @@ class Trainer:
         for epoch in range(self.num_epochs):
             train_loss = self.train_epoch(epoch)
             val_loss = self.validate()
-            self.scheduler.step()
-            
+
             # Save checkpoint
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
-                'scheduler_state_dict': self.scheduler.state_dict(),
                 'val_loss': val_loss,
             }
             
