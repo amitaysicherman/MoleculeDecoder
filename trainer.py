@@ -1,7 +1,5 @@
 import torch
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 import os
 import json
@@ -83,13 +81,7 @@ class Trainer:
         with open(hyper_file, 'w') as f:
             json.dump(hyperparams, f, indent=2)
         
-    def _prepare_decoder_inputs(self, tgt_embeddings):
-        """Prepare decoder inputs by shifting target embeddings right"""
-        # Create decoder input by shifting right
-        decoder_inputs = torch.zeros_like(tgt_embeddings)
-        decoder_inputs[:, 1:] = tgt_embeddings[:, :-1].clone()
-        # First token is zero (will be replaced with EOS token in model)
-        return decoder_inputs
+
         
     def train_epoch(self, epoch):
         self.model.train()
@@ -107,9 +99,6 @@ class Trainer:
                         batch['tgt_token_attention_mask'],
                         batch['tgt_mol_attention_mask']
                     )
-
-                # Create shifted decoder inputs
-                decoder_inputs = self._prepare_decoder_inputs(tgt_embeddings)
 
                 # Forward pass
                 outputs = self.model(

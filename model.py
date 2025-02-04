@@ -81,6 +81,13 @@ class VectorT5(T5PreTrainedModel):
     #
     #     return x, attention_mask
     #
+    def _prepare_decoder_inputs(self, tgt_embeddings):
+        """Prepare decoder inputs by shifting target embeddings right"""
+        # Create decoder input by shifting right
+        decoder_inputs = torch.zeros_like(tgt_embeddings)
+        decoder_inputs[:, 1:] = tgt_embeddings[:, :-1].clone()
+        # First token is zero (will be replaced with EOS token in model)
+        return decoder_inputs
     def forward(
         self,
         src_input_ids,
@@ -128,7 +135,9 @@ class VectorT5(T5PreTrainedModel):
                 tgt_mol_attention_mask
             )
             decoder_inputs = self.input_projection(tgt_embeddings)
-        
+
+        decoder_inputs = self._prepare_decoder_inputs(decoder_inputs)
+
         # Decoder
         decoder_outputs = self.decoder(
             inputs_embeds=decoder_inputs,
