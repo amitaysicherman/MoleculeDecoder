@@ -77,6 +77,9 @@ def main():
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,}")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(f"{name}: {param.requires_grad}, {param.numel():,}")
     # Initialize trainer
     trainer = Trainer(
         model=model,

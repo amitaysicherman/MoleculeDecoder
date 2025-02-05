@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-from transformers import T5PreTrainedModel, T5Config, AutoModel
-from transformers.models.t5.modeling_t5 import T5Stack
+from transformers import T5PreTrainedModel, T5Config, AutoModel, T5ForConditionalGeneration
 
 import copy
 
@@ -22,17 +21,12 @@ class VectorT5(T5PreTrainedModel):
         self.output_projection = nn.Linear(config.d_model, output_dim)
 
         # T5 encoder and decoder
-        encoder_config = copy.deepcopy(config)
-        encoder_config.is_decoder = False
-        encoder_config.use_cache = False
-        encoder_config.is_encoder_decoder = False
-        self.encoder = T5Stack(encoder_config)
-
-        decoder_config = copy.deepcopy(config)
-        decoder_config.is_decoder = True
-        decoder_config.is_encoder_decoder = False
-        decoder_config.num_layers = config.num_decoder_layers
-        self.decoder = T5Stack(decoder_config)
+        T5 = T5ForConditionalGeneration(config)
+        self.encoder = T5.get_encoder()
+        self.decoder = T5.get_decoder()
+        del T5
+        del self.encoder.embed_tokens
+        del self.decoder.embed_tokens
 
         self.eos_embedding = nn.Parameter(torch.randn(1, 1, config.d_model))
         self.decoder_start_embedding = nn.Parameter(torch.randn(1, 1, config.d_model))

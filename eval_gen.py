@@ -137,6 +137,9 @@ decoder_model, tokenizer = create_model()
 decoder_model.load_state_dict(torch.load("results/checkpoint-85000/pytorch_model.bin"), strict=False)
 decoder_model = decoder_model.to(device)
 concept_model = get_concept_model()
+concept_model.load_state_dict(torch.load("outputs/20250204_134024/best_model.pt")['model_state_dict'], strict=True)
+concept_model = concept_model.to(device)
+
 test_dataset = ReactionMolsDataset(base_dir="USPTO", split="test", debug=False)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
@@ -154,16 +157,36 @@ for batch in test_loader:
     )
     generated_ids = generate(
         decoder_model,
-        outputs['decoder_last_hidden_state'],
+        outputs['logits'][0][0:1],
         max_length=50,
-        num_beams=10,
+        num_beams=100,
         num_return_sequences=10,
         eos_token_id=tokenizer.eos_token_id
     )
     generated_smiles = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-    real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'], skip_special_tokens=True)
+    real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'][0][0:1], skip_special_tokens=True)
+    print("loss",outputs['loss'])
     print("Real SMILES:")
     print(real_smiles)
     for i, smiles in enumerate(generated_smiles):
         is_correct = smiles in real_smiles
-        print(f"SMILES {i + 1}: {smiles} ()")
+        print(f"SMILES {i + 1}: {smiles} ({smiles==real_smiles[0]})")
+
+
+
+    mol_outputs = decoder_model.molformer(batch['tgt_input_ids'][0][:1], attention_mask=batch['tgt_token_attention_mask'][0][:1])
+    encoder_outputs = decoder_model.proj(mol_outputs.pooler_output)
+    generated_gt_emb=generate(
+        decoder_model,
+        encoder_outputs,
+        max_length=50,
+        num_beams=100,
+        num_return_sequences=10,
+        eos_token_id=tokenizer.eos_token_id
+    )
+    generated_gt_smiles = tokenizer.batch_decode(generated_gt_emb, skip_special_tokens=True)
+    print("Real SMILES:")
+    print(real_smiles)
+    for i, smiles in enumerate(generated_gt_smiles):
+        is_correct = smiles in real_smiles
+        print(f"SMILES {i + 1}: {smiles} ({smiles==real_smiles[0]})")
