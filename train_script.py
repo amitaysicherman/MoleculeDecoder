@@ -44,8 +44,7 @@ def get_model(debug=False):
         )
     else:
         config = T5Config(
-            d_model=512,
-            d_kv=64,
+            d_model=768,
             d_ff=2048,
             num_layers=6,
             num_heads=8,
@@ -77,9 +76,6 @@ def main():
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total_params:,}")
     print(f"Trainable parameters: {trainable_params:,}")
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            print(f"{name}: {param.requires_grad}, {param.numel():,}")
     # Initialize trainer
     trainer = Trainer(
         model=model,
