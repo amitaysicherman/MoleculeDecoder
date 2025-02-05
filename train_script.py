@@ -33,23 +33,8 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-
-    # Set random seeds
-    torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(args.seed)
-
-    # Create output directory
-    os.makedirs(args.output_dir, exist_ok=True)
-
-    # Initialize datasets
-    train_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="train", debug=args.debug)
-    val_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="valid", debug=args.debug)
-
-    # Initialize model
-    if args.debug:
+def get_model(debug=False):
+    if debug:
         config = T5Config(
             d_model=64,
             d_kv=32,
@@ -66,6 +51,26 @@ def main():
             num_heads=8,
         )
     model = VectorT5(config, input_dim=768, output_dim=768)
+    return model
+
+
+def main():
+    args = parse_args()
+
+    # Set random seeds
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+
+    # Create output directory
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # Initialize datasets
+    train_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="train", debug=args.debug)
+    val_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="valid", debug=args.debug)
+
+    # Initialize model
+    model = get_model(debug=args.debug)
 
     # Print model parameters
     total_params = sum(p.numel() for p in model.parameters())
