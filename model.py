@@ -153,46 +153,46 @@ class VectorT5(T5PreTrainedModel):
 
         sequence_output = self.output_projection(decoder_outputs[0])
 
-        sequence_output_single_molecule = sequence_output[:, 0:1, :]  # current in forwaeed only one molecule
-        tgt_input_ids_single_molecule = tgt_input_ids[:, 0, :]
-        tokens_decoder_input_ids = _shift_right(tgt_input_ids_single_molecule,
-                                                self.tokens_decoder.config.decoder_start_token_id,
-                                                self.tokens_decoder.config.pad_token_id)
-        tokens_decoder_output = self.tokens_decoder.decoder(encoder_hidden_states=sequence_output_single_molecule,
-                                                            input_ids=tokens_decoder_input_ids)
-        tokens_lm_logits = self.tokens_decoder.lm_head(tokens_decoder_output.last_hidden_state)
-        # loss = F.cross_entropy(tokens_lm_logits.view(-1, tokens_lm_logits.size(-1)), tgt_input_ids_single_molecule.view(-1),
-        #                        ignore_index=-self.tokens_decoder.config.pad_token_id)
-        loss = F.cross_entropy(
-            tokens_lm_logits.reshape(-1, tokens_lm_logits.size(-1)),
-            tgt_input_ids_single_molecule.reshape(-1),
-            ignore_index=self.tokens_decoder.config.pad_token_id,
-        )
-        # Get target embeddings for labels
-        # labels = self._get_mol_embeddings(
-        #     tgt_input_ids,
-        #     tgt_token_attention_mask,
+        # sequence_output_single_molecule = sequence_output[:, 0:1, :]  # current in forwaeed only one molecule
+        # tgt_input_ids_single_molecule = tgt_input_ids[:, 0, :]
+        # tokens_decoder_input_ids = _shift_right(tgt_input_ids_single_molecule,
+        #                                         self.tokens_decoder.config.decoder_start_token_id,
+        #                                         self.tokens_decoder.config.pad_token_id)
+        # tokens_decoder_output = self.tokens_decoder.decoder(encoder_hidden_states=sequence_output_single_molecule,
+        #                                                     input_ids=tokens_decoder_input_ids)
+        # tokens_lm_logits = self.tokens_decoder.lm_head(tokens_decoder_output.last_hidden_state)
+        # # loss = F.cross_entropy(tokens_lm_logits.view(-1, tokens_lm_logits.size(-1)), tgt_input_ids_single_molecule.view(-1),
+        # #                        ignore_index=-self.tokens_decoder.config.pad_token_id)
+        # loss = F.cross_entropy(
+        #     tokens_lm_logits.reshape(-1, tokens_lm_logits.size(-1)),
+        #     tgt_input_ids_single_molecule.reshape(-1),
+        #     ignore_index=self.tokens_decoder.config.pad_token_id,
         # )
-        #
-        # loss_fct = nn.MSELoss(reduction='none')
-        # # Calculate MSE loss for each position
-        # position_losses = loss_fct(sequence_output, labels)
-        #
-        # # Apply mask to zero out loss for padding positions
-        # if tgt_mol_attention_mask is not None:
-        #     # Expand mask to match loss dimensions if needed
-        #     mask = tgt_mol_attention_mask.unsqueeze(-1).expand_as(position_losses)
-        #     position_losses = position_losses * mask
-        #
-        #     # Calculate mean loss over non-padding positions
-        #     total_active_elements = mask.sum()
-        #     if total_active_elements > 0:
-        #         loss = position_losses.sum() / total_active_elements
-        #     else:
-        #         loss = position_losses.sum() * 0.0  # Return 0 loss if all positions are masked
-        # else:
-        #     # If no mask provided, take mean over all positions
-        #     loss = position_losses.mean()
+        # Get target embeddings for labels
+        labels = self._get_mol_embeddings(
+            tgt_input_ids,
+            tgt_token_attention_mask,
+        )
+
+        loss_fct = nn.MSELoss(reduction='none')
+        # Calculate MSE loss for each position
+        position_losses = loss_fct(sequence_output, labels)
+
+        # Apply mask to zero out loss for padding positions
+        if tgt_mol_attention_mask is not None:
+            # Expand mask to match loss dimensions if needed
+            mask = tgt_mol_attention_mask.unsqueeze(-1).expand_as(position_losses)
+            position_losses = position_losses * mask
+
+            # Calculate mean loss over non-padding positions
+            total_active_elements = mask.sum()
+            if total_active_elements > 0:
+                loss = position_losses.sum() / total_active_elements
+            else:
+                loss = position_losses.sum() * 0.0  # Return 0 loss if all positions are masked
+        else:
+            # If no mask provided, take mean over all positions
+            loss = position_losses.mean()
 
         if return_dict:
             return {
