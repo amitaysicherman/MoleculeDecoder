@@ -180,20 +180,15 @@ class VectorT5(T5PreTrainedModel):
         position_losses = loss_fct(sequence_output, labels)
 
         # Apply mask to zero out loss for padding positions
-        if tgt_mol_attention_mask is not None:
-            # Expand mask to match loss dimensions if needed
-            mask = tgt_mol_attention_mask.unsqueeze(-1).expand_as(position_losses)
-            position_losses = position_losses * mask
+        mask = tgt_mol_attention_mask.unsqueeze(-1).expand_as(position_losses)
+        position_losses = position_losses * mask
 
-            # Calculate mean loss over non-padding positions
-            total_active_elements = mask.sum()
-            if total_active_elements > 0:
-                loss = position_losses.sum() / total_active_elements
-            else:
-                loss = position_losses.sum() * 0.0  # Return 0 loss if all positions are masked
+        # Calculate mean loss over non-padding positions
+        total_active_elements = mask.sum()
+        if total_active_elements > 0:
+            loss = position_losses.sum() / total_active_elements
         else:
-            # If no mask provided, take mean over all positions
-            loss = position_losses.mean()
+            loss = position_losses.sum() * 0.0  # Return 0 loss if all positions are masked
 
         if return_dict:
             return {
