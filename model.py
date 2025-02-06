@@ -16,12 +16,15 @@ class VectorT5(T5PreTrainedModel):
         self.molformer = AutoModel.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
             trust_remote_code=True
-        ).to(device).eval()
+        ).to(device)
         self.tokens_decoder = create_model()[0]
+        for param in self.molformer.parameters():
+            param.requires_grad = False
+
         self.tokens_decoder.load_state_dict(
             torch.load('results/checkpoint-100000/pytorch_model.bin', map_location='cpu'), strict=False)
-        self.tokens_decoder = self.tokens_decoder.to(device).eval()
-        for param in self.molformer.parameters():
+        self.tokens_decoder = self.tokens_decoder.to(device)
+        for param in self.tokens_decoder.parameters():
             param.requires_grad = False
         # Input/Output projections
 
@@ -152,7 +155,8 @@ class VectorT5(T5PreTrainedModel):
 
         sequence_output_single_molecule = sequence_output[:, 0:1, :]  # current in forwaeed only one molecule
         tgt_input_ids_single_molecule = tgt_input_ids[:, 0, :]
-        tokens_decoder_input_ids = _shift_right(tgt_input_ids_single_molecule, self.tokens_decoder.config.decoder_start_token_id,
+        tokens_decoder_input_ids = _shift_right(tgt_input_ids_single_molecule,
+                                                self.tokens_decoder.config.decoder_start_token_id,
                                                 self.tokens_decoder.config.pad_token_id)
         tokens_decoder_output = self.tokens_decoder.decoder(encoder_hidden_states=sequence_output_single_molecule,
                                                             input_ids=tokens_decoder_input_ids)
