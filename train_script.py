@@ -41,6 +41,9 @@ def get_model(debug=False):
             d_ff=128,
             num_layers=2,
             num_heads=2,
+            input_dim=768,
+            output_dim=768,
+            dropout=0.0
         )
     else:
         config = T5Config(
@@ -48,8 +51,11 @@ def get_model(debug=False):
             d_ff=2048,
             num_layers=6,
             num_heads=8,
+            input_dim=768,
+            output_dim=768,
+            dropout=0.1
         )
-    model = VectorT5(config, input_dim=768, output_dim=768)
+    model = VectorT5(config)
     return model
 
 

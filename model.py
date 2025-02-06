@@ -1,53 +1,72 @@
 import torch
 import torch.nn as nn
-from transformers import T5PreTrainedModel, T5Config, AutoModel, T5ForConditionalGeneration
-from train_decoder import create_model, _shift_right
-import copy
-from torch.nn import functional as F
+import math
+from transformers import PreTrainedModel, PretrainedConfig, AutoModel
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from torch.nn import TransformerDecoder, TransformerDecoderLayer
+from transformers import T5Config
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-class VectorT5(T5PreTrainedModel):
-    def __init__(self, config: T5Config, input_dim: int, output_dim: int):
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        position = torch.arange(max_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, 1, d_model)
+        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 1::2] = torch.cos(position * div_term)
+        pe = pe.transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x + self.pe[:, :x.size(1)]
+        return self.dropout(x)
+
+
+
+
+class VectorT5(PreTrainedModel):
+    def __init__(self, config: T5Config):
         super().__init__(config)
 
         # Initialize MolFormer
-        self.molformer = AutoModel.from_pretrained(
-            "ibm/MoLFormer-XL-both-10pct",
-            deterministic_eval=True,
-            trust_remote_code=True
-        ).to(device)
-        self.tokens_decoder = create_model()[0]
-        for param in self.molformer.parameters():
-            param.requires_grad = False
+        self.input_projection = nn.Linear(config.input_dim, config.d_model)
+        self.output_projection = nn.Linear(config.d_model, config.output_dim)
 
-        self.tokens_decoder.load_state_dict(
-            torch.load('results/checkpoint-100000/pytorch_model.bin', map_location='cpu'), strict=False)
-        self.tokens_decoder = self.tokens_decoder.to(device)
-        for param in self.tokens_decoder.parameters():
-            param.requires_grad = False
-        # Input/Output projections
+        # Create encoder
+        encoder_layer = TransformerEncoderLayer(
+            d_model=config.d_model,
+            nhead=config.num_heads,
+            dim_feedforward=config.d_ff,
+            dropout=config.dropout,
+            batch_first=True
+        )
+        self.encoder = TransformerEncoder(
+            encoder_layer,
+            num_layers=config.num_layers
+        )
 
-        self.input_projection = nn.Linear(input_dim, config.d_model)
-        self.output_projection = nn.Linear(config.d_model, output_dim)
+        # Create decoder
+        decoder_layer = TransformerDecoderLayer(
+            d_model=config.d_model,
+            nhead=config.num_heads,
+            dim_feedforward=config.d_ff,
+            dropout=config.dropout,
+            batch_first=True
+        )
+        self.decoder = TransformerDecoder(
+            decoder_layer,
+            num_layers=config.num_layers
+        )
 
-        # T5 encoder and decoder
-        T5 = T5ForConditionalGeneration(config)
-        # copy the encoder and decoder from the T5 model
-        self.encoder = copy.deepcopy(T5.get_encoder())
-        self.decoder = copy.deepcopy(T5.get_decoder())
-        # self.encoder = T5.get_encoder()
-        # self.decoder = T5.get_decoder()
-        del T5
-        del self.encoder.embed_tokens
-        del self.decoder.embed_tokens
-
-        self.eos_embedding = nn.Parameter(torch.randn(1, 1, config.d_model))
         self.decoder_start_embedding = nn.Parameter(torch.randn(1, 1, config.d_model))
 
-        # Initialize weights
-        self.init_weights()
+        # Add positional encoding
+        self.pos_encoder = PositionalEncoding(config.d_model, config.dropout)
 
     def _get_mol_embeddings(self, input_ids, token_attention_mask):
         """
@@ -56,8 +75,8 @@ class VectorT5(T5PreTrainedModel):
         batch_size, max_seq_len, seq_len = input_ids.shape
 
         # Reshape for parallel processing
-        flat_input_ids = input_ids.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
-        flat_attention_mask = token_attention_mask.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
+        flat_input_ids = input_ids.view(-1, seq_len)
+        flat_attention_mask = token_attention_mask.view(-1, seq_len)
 
         # Process through MolFormer in chunks to avoid OOM
         chunk_size = 2048  # Adjust based on your GPU memory
@@ -75,130 +94,123 @@ class VectorT5(T5PreTrainedModel):
                 all_embeddings.append(outputs.pooler_output)
 
         # Combine chunks
-        embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
-
-        # Reshape back to original dimensions
-        embeddings = embeddings.view(batch_size, max_seq_len, -1)  # (batch_size, max_seq_len, hidden_size)
+        embeddings = torch.cat(all_embeddings, dim=0)
+        embeddings = embeddings.view(batch_size, max_seq_len, -1)
         return embeddings
 
-    # def _append_eos(self, x, attention_mask=None):
-    #     if attention_mask is None:
-    #         return x, attention_mask
-    #
-    #     # Find first padding position in each sequence
-    #     first_pad_pos = attention_mask.sum(dim=1, keepdim=True)  # Shape: (batch_size, 1)
-    #
-    #     # Replace first padding token with EOS embedding
-    #     eos_pos = torch.arange(x.size(1), device=x.device).unsqueeze(0)  # Shape: (1, seq_len)
-    #     is_eos = (eos_pos == first_pad_pos)  # Shape: (batch_size, seq_len)
-    #
-    #     # Create EOS embeddings for each sequence
-    #     eos = self.eos_embedding.expand(x.shape[0], -1, -1)  # Shape: (batch_size, 1, hidden_size)
-    #     x = torch.where(is_eos.unsqueeze(-1), eos, x)
-    #
-    #     return x, attention_mask
-    #
     def _prepare_decoder_inputs(self, tgt_embeddings):
         """Prepare decoder inputs by shifting target embeddings right"""
-        # Create decoder input by shifting right
         decoder_inputs = torch.cat(
-            [self.decoder_start_embedding.expand(tgt_embeddings.size(0), -1, -1), tgt_embeddings[:, :-1]], dim=1
+            [self.decoder_start_embedding.expand(tgt_embeddings.size(0), -1, -1),
+             tgt_embeddings[:, :-1]], dim=1
         )
-
         return decoder_inputs
+
+    def generate_square_subsequent_mask(self, sz):
+        mask = torch.triu(torch.ones(sz, sz), diagonal=1)
+        mask = mask.masked_fill(mask == 1, float('-inf'))
+        return mask
 
     def forward(
             self,
-            src_input_ids,
-            src_token_attention_mask,
+            src_embeddings,
             src_mol_attention_mask,
-            tgt_input_ids=None,
-            tgt_token_attention_mask=None,
-            tgt_mol_attention_mask=None,
-            return_dict=None,
+            tgt_embeddings,
+            tgt_mol_attention_mask,
     ):
-        # Get embeddings for source and target molecules
-        src_embeddings = self._get_mol_embeddings(
-            src_input_ids,
-            src_token_attention_mask,
-        )
-        # Project embeddings to model dimension
+        # Project embeddings and add positional encoding
         encoder_hidden_states = self.input_projection(src_embeddings)
-        # # Add EOS to encoder inputs
-        # encoder_hidden_states, src_attention_mask = self._append_eos(
-        #     encoder_hidden_states,
-        #     src_attention_mask
-        # )
+        encoder_hidden_states = self.pos_encoder(encoder_hidden_states)
+
+        # Create source padding mask (True means padding position)
+        src_key_padding_mask = ~src_mol_attention_mask.bool()
 
         # Encoder
-        encoder_outputs = self.encoder(
-            inputs_embeds=encoder_hidden_states,
-            attention_mask=src_mol_attention_mask,
-            return_dict=return_dict,
-            use_cache=False,
+        memory = self.encoder(
+            src=encoder_hidden_states,
+            src_key_padding_mask=src_key_padding_mask
         )
-        tgt_embeddings = self._get_mol_embeddings(
-            tgt_input_ids,
-            tgt_token_attention_mask,
-        )
-        decoder_inputs = self.input_projection(tgt_embeddings)
 
+        # Prepare decoder inputs
+        decoder_inputs = self.input_projection(tgt_embeddings)
         decoder_inputs = self._prepare_decoder_inputs(decoder_inputs)
+        decoder_inputs = self.pos_encoder(decoder_inputs)
+
+        # Create masks for decoder
+        tgt_key_padding_mask = ~tgt_mol_attention_mask.bool()
+        tgt_mask = self.generate_square_subsequent_mask(decoder_inputs.size(1)).to(decoder_inputs.device)
 
         # Decoder
         decoder_outputs = self.decoder(
-            inputs_embeds=decoder_inputs,
-            attention_mask=tgt_mol_attention_mask,
-            encoder_hidden_states=encoder_outputs[0],
-            encoder_attention_mask=src_mol_attention_mask,
-            return_dict=return_dict,
-            use_cache=False,
+            tgt=decoder_inputs,
+            memory=memory,
+            tgt_mask=tgt_mask,
+            tgt_key_padding_mask=tgt_key_padding_mask,
+            memory_key_padding_mask=src_key_padding_mask
         )
 
-        sequence_output = self.output_projection(decoder_outputs[0])
+        sequence_output = self.output_projection(decoder_outputs)
 
-        # sequence_output_single_molecule = sequence_output[:, 0:1, :]  # current in forwaeed only one molecule
-        # tgt_input_ids_single_molecule = tgt_input_ids[:, 0, :]
-        # tokens_decoder_input_ids = _shift_right(tgt_input_ids_single_molecule,
-        #                                         self.tokens_decoder.config.decoder_start_token_id,
-        #                                         self.tokens_decoder.config.pad_token_id)
-        # tokens_decoder_output = self.tokens_decoder.decoder(encoder_hidden_states=sequence_output_single_molecule,
-        #                                                     input_ids=tokens_decoder_input_ids)
-        # tokens_lm_logits = self.tokens_decoder.lm_head(tokens_decoder_output.last_hidden_state)
-        # # loss = F.cross_entropy(tokens_lm_logits.view(-1, tokens_lm_logits.size(-1)), tgt_input_ids_single_molecule.view(-1),
-        # #                        ignore_index=-self.tokens_decoder.config.pad_token_id)
-        # loss = F.cross_entropy(
-        #     tokens_lm_logits.reshape(-1, tokens_lm_logits.size(-1)),
-        #     tgt_input_ids_single_molecule.reshape(-1),
-        #     ignore_index=self.tokens_decoder.config.pad_token_id,
-        # )
-        # Get target embeddings for labels
-        labels = self._get_mol_embeddings(
-            tgt_input_ids,
-            tgt_token_attention_mask,
-        )
-
+        # Calculate loss
         loss_fct = nn.MSELoss(reduction='none')
-        # Calculate MSE loss for each position
-        position_losses = loss_fct(sequence_output, labels)
-
-        # Apply mask to zero out loss for padding positions
+        position_losses = loss_fct(sequence_output, tgt_embeddings)
         mask = tgt_mol_attention_mask.unsqueeze(-1).expand_as(position_losses)
         position_losses = position_losses * mask
-
-        # Calculate mean loss over non-padding positions
         total_active_elements = mask.sum()
-        if total_active_elements > 0:
-            loss = position_losses.sum() / total_active_elements
-        else:
-            loss = position_losses.sum() * 0.0  # Return 0 loss if all positions are masked
 
-        if return_dict:
-            return {
-                'loss': loss,
-                'logits': sequence_output,
-                'encoder_last_hidden_state': encoder_outputs[0],
-                'decoder_last_hidden_state': decoder_outputs[0],
-            }
+        return position_losses.sum() / total_active_elements
 
-        return loss, sequence_output
+
+if __name__ == "__main__":
+    import torch
+    from torch.optim import AdamW
+
+    # MolFormer output dimension is 1024
+    config = T5Config(
+        d_model=8,  # Transformer hidden dimension
+        d_ff=16,  # Feed-forward dimension
+        num_layers=1,  # Number of encoder/decoder layers
+        num_heads=1,  # Number of attention heads
+        dropout=0.1,  # Dropout rate
+        input_dim=10,  # MolFormer output dimension
+        output_dim=10  # To match input dimension for loss calculation
+    )
+
+    # Initialize model
+    model = VectorT5(config).to(device)
+    optimizer = AdamW(model.parameters(), lr=1e-4)
+
+    # Create dummy data
+    batch_size = 2
+    seq_length = 3
+    embedding_dim = 10  # MolFormer output dimension
+
+    # Create random embeddings to simulate MolFormer output
+    src_embeddings = torch.randn(batch_size, seq_length, embedding_dim).to(device)
+    tgt_embeddings = torch.randn(batch_size, seq_length, embedding_dim).to(device)
+
+    # Create attention masks (1 for valid tokens, 0 for padding)
+    src_mol_attention_mask = torch.ones(batch_size, seq_length).to(device)
+    tgt_mol_attention_mask = torch.ones(batch_size, seq_length).to(device)
+
+    # Add some padding to test mask functionality
+    src_mol_attention_mask[:, -1] = 0  # Last position is padding
+    tgt_mol_attention_mask[:, -1] = 0  # Last position is padding
+
+    # Training loop
+    model.train()
+    for epoch in range(10):
+        optimizer.zero_grad()
+
+        loss = model(
+            src_embeddings=src_embeddings,
+            src_mol_attention_mask=src_mol_attention_mask,
+            tgt_embeddings=tgt_embeddings,
+            tgt_mol_attention_mask=tgt_mol_attention_mask,
+        )
+
+        print(f"Epoch {epoch}, Loss: {loss.item():.4f}")
+
+        loss.backward()
+        optimizer.step()
+
