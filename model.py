@@ -15,6 +15,7 @@ class VectorT5(T5PreTrainedModel):
         # Initialize MolFormer
         self.molformer = AutoModel.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
+            deterministic_eval=True,
             trust_remote_code=True
         ).to(device)
         self.tokens_decoder = create_model()[0]
