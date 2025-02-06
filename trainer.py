@@ -33,7 +33,7 @@ class Trainer:
             num_workers=1,
             pin_memory=False
         )
-        self.optimizer = torch.optim.Adam(
+        self.optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=lr,
         )
@@ -102,7 +102,7 @@ class Trainer:
                 loss = outputs['loss']
                 loss.backward()
 
-                # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 self.optimizer.step()
 
                 total_loss += loss.item()

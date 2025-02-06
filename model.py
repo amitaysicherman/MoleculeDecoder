@@ -34,8 +34,11 @@ class VectorT5(T5PreTrainedModel):
 
         # T5 encoder and decoder
         T5 = T5ForConditionalGeneration(config)
-        self.encoder = T5.get_encoder()
-        self.decoder = T5.get_decoder()
+        # copy the encoder and decoder from the T5 model
+        self.encoder = copy.deepcopy(T5.get_encoder())
+        self.decoder = copy.deepcopy(T5.get_decoder())
+        # self.encoder = T5.get_encoder()
+        # self.decoder = T5.get_decoder()
         del T5
         del self.encoder.embed_tokens
         del self.decoder.embed_tokens
