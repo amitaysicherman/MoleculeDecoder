@@ -33,7 +33,7 @@ class Trainer:
             num_workers=1,
             pin_memory=False
         )
-        self.optimizer = torch.optim.AdamW(
+        self.optimizer = torch.optim.Adam(
             model.parameters(),
             lr=lr,
         )
