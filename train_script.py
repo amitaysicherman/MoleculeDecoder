@@ -83,7 +83,7 @@ def main():
         val_dataset=val_dataset,
         batch_size=args.batch_size if not args.debug else 1,
         num_epochs=args.epochs if not args.debug else 200,
-        lr=args.lr if not args.debug else 1e-3,
+        lr=args.lr,
         device="cuda" if torch.cuda.is_available() else "cpu",
         output_dir=args.output_dir
     )
