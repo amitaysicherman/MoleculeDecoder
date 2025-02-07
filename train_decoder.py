@@ -42,8 +42,9 @@ class SMILESDataset(Dataset):
             self.all_uspto_mols = f.read().splitlines()
 
         # Calculate total size
-        self.uspto_size = len(self.all_uspto_mols)
         self.zink_size = len(self.indices)
+        uspto_factor =
+        self.uspto_size = len(self.all_uspto_mols)
         self.total_size = self.uspto_size + self.zink_size
 
     def remove_stereochemistry(self, smiles):

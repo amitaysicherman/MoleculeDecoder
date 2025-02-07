@@ -1,4 +1,4 @@
-all_mols = []
+all_mols = set()
 base_dir="USPTO"
 for split in ["train","valid","test"]:
     for side in ["src","tgt"]:
