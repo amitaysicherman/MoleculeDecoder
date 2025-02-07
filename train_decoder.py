@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, random_split
 from transformers import Trainer, TrainingArguments
 import torch.nn as nn
 from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer, GenerationConfig, \
-    T5PreTrainedModel,PreTrainedModel
+    T5PreTrainedModel, PreTrainedModel
 from transformers.modeling_outputs import Seq2SeqLMOutput
 from torch.nn import functional as F
 import mmap
@@ -38,11 +38,13 @@ class SMILESDataset(Dataset):
         self.bin_file = open(bin_file_path, 'rb')
         self.mm = mmap.mmap(self.bin_file.fileno(), 0, access=mmap.ACCESS_READ)
 
-        with open(bin_file_path, 'rb') as f:
-            self.total_size = len(f.readlines())
+        with open("USPTO/all_mols.txt") as f:
+            self.all_uspto_mols = f.read().splitlines()
 
         # Calculate total size
-        self.total_size = len(self.indices)
+        self.uspto_size = len(self.all_uspto_mols)
+        self.zink_size = len(self.indices)
+        self.total_size = self.uspto_size + self.zink_size
 
     def remove_stereochemistry(self, smiles):
         """
@@ -66,25 +68,29 @@ class SMILESDataset(Dataset):
             str: The SMILES string
         """
         # Get start index
-        start_idx = self.indices[idx]
 
-        # Get end index (either next index or end of file)
-        if idx + 1 < self.total_size:
-            end_idx = self.indices[idx + 1]
+        if idx >= self.zink_size:
+            print("USPTO")
+            smile = self.all_uspto_mols[idx - self.zink_size]
+
         else:
-            end_idx = len(self.mm)
+            start_idx = self.indices[idx]
 
-        # Read and decode the SMILES string
-        smile = self.mm[start_idx:end_idx].decode('utf-8')
+            # Get end index (either next index or end of file)
+            if idx + 1 < self.total_size:
+                end_idx = self.indices[idx + 1]
+            else:
+                end_idx = len(self.mm)
+
+            # Read and decode the SMILES string
+            smile = self.mm[start_idx:end_idx].decode('utf-8')
         smile = self.remove_stereochemistry(smile)
-
         tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=75, return_tensors="pt")
-        tokens={k: v.squeeze(0) for k, v in tokens.items()}
+        tokens = {k: v.squeeze(0) for k, v in tokens.items()}
         labels = tokens["input_ids"].clone()
-        #replace pad tokens with -100
+        # replace pad tokens with -100
         labels[labels == self.tokenizer.pad_token_id] = -100
         tokens["labels"] = labels
-
 
         return tokens
 
