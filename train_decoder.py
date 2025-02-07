@@ -117,7 +117,8 @@ class MolFormerT5Decoder(PreTrainedModel):
         # Load and freeze MolFormer
         self.molformer = AutoModel.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
-            trust_remote_code=True
+            trust_remote_code=True,
+            deterministic_eval=True
         )
         self.config = config
         for param in self.molformer.parameters():
