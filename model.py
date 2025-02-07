@@ -117,6 +117,7 @@ class VectorT5(PreTrainedModel):
             src_mol_attention_mask,
             tgt_embeddings,
             tgt_mol_attention_mask,
+            return__seq=False
     ):
         # Project embeddings and add positional encoding
         encoder_hidden_states = self.input_projection(src_embeddings)
@@ -158,7 +159,9 @@ class VectorT5(PreTrainedModel):
         position_losses = position_losses * mask
         total_active_elements = mask.sum()
 
-        return position_losses.sum() / total_active_elements
+        loss= position_losses.sum() / total_active_elements
+        if return__seq:
+            return loss, sequence_output
 
 
 if __name__ == "__main__":

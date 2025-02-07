@@ -4,6 +4,9 @@ from train_decoder import create_model
 from train_script import get_model as get_concept_model
 from dataset import ReactionMolsDataset
 from torch.utils.data import DataLoader
+from transformers import AutoModel
+from trainer import get_mol_embeddings
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -131,62 +134,74 @@ def generate(
     return torch.stack(output_sequences).to(device)
 
 
-
-
 decoder_model, tokenizer = create_model()
-decoder_model.load_state_dict(torch.load("results/checkpoint-85000/pytorch_model.bin"), strict=False)
-decoder_model = decoder_model.to(device)
+decoder_model.load_state_dict(
+    torch.load("results/checkpoint-100000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
+decoder_model = decoder_model.to(device).eval()
 concept_model = get_concept_model()
-concept_model.load_state_dict(torch.load("outputs/20250204_134024/best_model.pt")['model_state_dict'], strict=True)
+concept_model.load_state_dict(
+    torch.load("outputs/20250206_214325/best_model.pt", map_location=torch.device('cpu'))['model_state_dict'],
+    strict=True)
 concept_model = concept_model.to(device)
+
+molformer = AutoModel.from_pretrained(
+    "ibm/MoLFormer-XL-both-10pct",
+    deterministic_eval=True,
+    trust_remote_code=True
+).to(device).eval()
+for param in molformer.parameters():
+    param.requires_grad = False
 
 test_dataset = ReactionMolsDataset(base_dir="USPTO", split="test", debug=False)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 for batch in test_loader:
     batch = {k: v.to(device) for k, v in batch.items()}
-
-    outputs = concept_model(
-        src_input_ids=batch['src_input_ids'],
-        src_token_attention_mask=batch['src_token_attention_mask'],
-        src_mol_attention_mask=batch['src_mol_attention_mask'],
-        tgt_input_ids=batch['tgt_input_ids'],
-        tgt_token_attention_mask=batch['tgt_token_attention_mask'],
-        tgt_mol_attention_mask=batch['tgt_mol_attention_mask'],
-        return_dict=True,
+    intput_embeddings = get_mol_embeddings(
+        molformer,
+        batch['src_input_ids'],
+        batch['src_token_attention_mask']
     )
+    output_embeddings = get_mol_embeddings(
+        molformer,
+        batch['tgt_input_ids'],
+        batch['tgt_token_attention_mask']
+    )
+    loss, outputs = concept_model(
+        src_embeddings=intput_embeddings,
+        tgt_embeddings=output_embeddings,
+        src_mol_attention_mask=batch['src_mol_attention_mask'],
+        tgt_mol_attention_mask=batch['tgt_mol_attention_mask'],
+        return__seq=True
+    )
+
     generated_ids = generate(
         decoder_model,
-        outputs['logits'][0][0:1],
+        outputs[0][0:1],
         max_length=50,
-        num_beams=100,
+        num_beams=10,
         num_return_sequences=10,
         eos_token_id=tokenizer.eos_token_id
     )
     generated_smiles = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-    real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'][0][0:1], skip_special_tokens=True)
-    print("loss",outputs['loss'])
-    print("Real SMILES:")
-    print(real_smiles)
-    for i, smiles in enumerate(generated_smiles):
-        is_correct = smiles in real_smiles
-        print(f"SMILES {i + 1}: {smiles} ({smiles==real_smiles[0]})")
-
-
-
-    mol_outputs = decoder_model.molformer(batch['tgt_input_ids'][0][:1], attention_mask=batch['tgt_token_attention_mask'][0][:1])
+    real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'][0][0:1], skip_special_tokens=True)[0]
+    index = -1 if real_smiles not in generated_smiles else generated_smiles.index(real_smiles)
+    mol_outputs = decoder_model.molformer(batch['tgt_input_ids'][0][:1],
+                                          attention_mask=batch['tgt_token_attention_mask'][0][:1])
     encoder_outputs = decoder_model.proj(mol_outputs.pooler_output)
-    generated_gt_emb=generate(
+    generated_gt_emb = generate(
         decoder_model,
         encoder_outputs,
         max_length=50,
-        num_beams=100,
+        num_beams=10,
         num_return_sequences=10,
         eos_token_id=tokenizer.eos_token_id
     )
     generated_gt_smiles = tokenizer.batch_decode(generated_gt_emb, skip_special_tokens=True)
-    print("Real SMILES:")
-    print(real_smiles)
-    for i, smiles in enumerate(generated_gt_smiles):
-        is_correct = smiles in real_smiles
-        print(f"SMILES {i + 1}: {smiles} ({smiles==real_smiles[0]})")
+    index2 = -1 if real_smiles not in generated_gt_smiles else generated_gt_smiles.index(real_smiles)
+    print("loss:", loss.item(), "index:", index, "index2:", index2)
+    # print("Real SMILES:")
+    # print(real_smiles)
+    # for i, smiles in enumerate(generated_gt_smiles):
+    #     is_correct = smiles in real_smiles
+    #     print(f"SMILES {i + 1}: {smiles} ({smiles == real_smiles[0]})")
