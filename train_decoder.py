@@ -195,14 +195,14 @@ if __name__ == "__main__":
     train_dataset, eval_dataset = random_split(
         dataset, [train_size, eval_size]
     )
-
+    suf="_both"
     training_args = TrainingArguments(
-        output_dir="./results",
+        output_dir=f"./results{suf}",
         num_train_epochs=1,
         per_device_train_batch_size=1024,
         per_device_eval_batch_size=1024,
         learning_rate=1e-4,  # Constant learning rate
-        logging_dir='./logs',
+        logging_dir=f'./logs{suf}',
         logging_steps=1_000,
         save_steps=5_000,
         eval_accumulation_steps=2,
