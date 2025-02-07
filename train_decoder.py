@@ -75,6 +75,7 @@ class SMILESDataset(Dataset):
             smile = self.all_uspto_mols[(idx - self.zink_size) % self.uspto_size]
 
         else:
+            print("ZINK")
             start_idx = self.indices[idx]
 
             # Get end index (either next index or end of file)
