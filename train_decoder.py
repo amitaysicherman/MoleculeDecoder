@@ -9,6 +9,7 @@ from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTo
 from transformers.modeling_outputs import Seq2SeqLMOutput
 from torch.nn import functional as F
 import mmap
+from rdkit import Chem
 
 
 def _shift_right(input_ids, decoder_start_token_id, pad_token_id):
@@ -40,6 +41,16 @@ class SMILESDataset(Dataset):
         # Calculate total size
         self.total_size = len(self.indices)
 
+    def remove_stereochemistry(self, smiles):
+        """
+        Remove stereochemistry using RDKit.
+        """
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return smiles
+        Chem.RemoveStereochemistry(mol)
+        return Chem.MolToSmiles(mol)
+
     def __len__(self):
         return self.total_size
 
@@ -62,6 +73,8 @@ class SMILESDataset(Dataset):
 
         # Read and decode the SMILES string
         smile = self.mm[start_idx:end_idx].decode('utf-8')
+        smile = self.remove_stereochemistry(smile)
+
         tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=75, return_tensors="pt")
         tokens={k: v.squeeze(0) for k, v in tokens.items()}
         labels = tokens["input_ids"].clone()

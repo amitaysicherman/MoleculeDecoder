@@ -142,7 +142,7 @@ concept_model = get_concept_model()
 concept_model.load_state_dict(
     torch.load("outputs/20250206_214325/best_model.pt", map_location=torch.device('cpu'))['model_state_dict'],
     strict=True)
-concept_model = concept_model.to(device)
+concept_model = concept_model.to(device).eval()
 
 molformer = AutoModel.from_pretrained(
     "ibm/MoLFormer-XL-both-10pct",
@@ -186,12 +186,11 @@ for batch in test_loader:
     generated_smiles = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
     real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'][0][0:1], skip_special_tokens=True)[0]
     index = -1 if real_smiles not in generated_smiles else generated_smiles.index(real_smiles)
-    mol_outputs = decoder_model.molformer(batch['tgt_input_ids'][0][:1],
-                                          attention_mask=batch['tgt_token_attention_mask'][0][:1])
-    encoder_outputs = decoder_model.proj(mol_outputs.pooler_output)
+
+
     generated_gt_emb = generate(
         decoder_model,
-        encoder_outputs,
+        output_embeddings[0][0:1],
         max_length=50,
         num_beams=10,
         num_return_sequences=10,
@@ -200,6 +199,15 @@ for batch in test_loader:
     generated_gt_smiles = tokenizer.batch_decode(generated_gt_emb, skip_special_tokens=True)
     index2 = -1 if real_smiles not in generated_gt_smiles else generated_gt_smiles.index(real_smiles)
     print("loss:", loss.item(), "index:", index, "index2:", index2)
+
+    labels = batch['tgt_input_ids'].clone()
+    labels[labels == tokenizer.pad_token_id] = -100
+
+    outputs=decoder_model(input_ids=batch['tgt_input_ids'], attention_mask=batch['tgt_token_attention_mask'], labels=labels)
+    pred_tokens = outputs.logits.argmax(dim=-1)
+    pred_smiles = tokenizer.batch_decode(pred_tokens, skip_special_tokens=True)
+
+
     # print("Real SMILES:")
     # print(real_smiles)
     # for i, smiles in enumerate(generated_gt_smiles):
