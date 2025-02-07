@@ -189,7 +189,7 @@ if __name__ == "__main__":
 
     training_args = TrainingArguments(
         output_dir="./results",
-        num_train_epochs=10,
+        num_train_epochs=1,
         per_device_train_batch_size=1024,
         per_device_eval_batch_size=1024,
         learning_rate=1e-4,  # Constant learning rate
