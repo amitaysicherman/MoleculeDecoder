@@ -7,5 +7,5 @@ for split in ["train","valid","test"]:
         mols = [line.replace(" ", "").split(".") for line in lines]
         all_mols.extend([m for mol in mols for m in mol])
 print(len(all_mols))
-with open("all_mols.txt", "w") as f:
+with open("USPTO/all_mols.txt", "w") as f:
     f.write("\n".join(all_mols))

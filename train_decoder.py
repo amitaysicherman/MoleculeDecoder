@@ -38,6 +38,9 @@ class SMILESDataset(Dataset):
         self.bin_file = open(bin_file_path, 'rb')
         self.mm = mmap.mmap(self.bin_file.fileno(), 0, access=mmap.ACCESS_READ)
 
+        with open(bin_file_path, 'rb') as f:
+            self.total_size = len(f.readlines())
+
         # Calculate total size
         self.total_size = len(self.indices)
 
