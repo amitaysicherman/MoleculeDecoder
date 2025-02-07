@@ -43,9 +43,9 @@ class SMILESDataset(Dataset):
 
         # Calculate total size
         self.zink_size = len(self.indices)
-        uspto_factor =
+        self.uspto_factor = 100
         self.uspto_size = len(self.all_uspto_mols)
-        self.total_size = self.uspto_size + self.zink_size
+        self.total_size = self.zink_size + (self.uspto_size * self.uspto_factor)
 
     def remove_stereochemistry(self, smiles):
         """
@@ -72,7 +72,7 @@ class SMILESDataset(Dataset):
 
         if idx >= self.zink_size:
             print("USPTO")
-            smile = self.all_uspto_mols[idx - self.zink_size]
+            smile = self.all_uspto_mols[(idx - self.zink_size) % self.uspto_size]
 
         else:
             start_idx = self.indices[idx]
