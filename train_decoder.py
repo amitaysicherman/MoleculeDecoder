@@ -217,7 +217,7 @@ if __name__ == "__main__":
     suf = "_pubchem"
     training_args = TrainingArguments(
         output_dir=f"./results{suf}",
-        num_train_epochs=1,
+        num_train_epochs=10,
         per_device_train_batch_size=1024,
         per_device_eval_batch_size=1024,
         learning_rate=1e-4,  # Constant learning rate
