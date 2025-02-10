@@ -175,14 +175,15 @@ for batch in test_loader:
         return__seq=True
     )
 
-    generated_ids = generate(
-        decoder_model,
-        outputs[0][0:1],
-        max_length=50,
-        num_beams=10,
-        num_return_sequences=10,
-        eos_token_id=tokenizer.eos_token_id
-    )
+    # generated_ids = generate(
+    #     decoder_model,
+    #     outputs[0][0:1],
+    #     max_length=50,
+    #     num_beams=10,
+    #     num_return_sequences=10,
+    #     eos_token_id=tokenizer.eos_token_id
+    # )
+    decoder_model(input_ids=batch['tgt_input_ids'], attention_mask=batch['tgt_token_attention_mask'])
     generated_smiles = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
     real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'][0][0:1], skip_special_tokens=True)[0]
     index = -1 if real_smiles not in generated_smiles else generated_smiles.index(real_smiles)

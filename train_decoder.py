@@ -24,82 +24,101 @@ def _shift_right(input_ids, decoder_start_token_id, pad_token_id):
 
 
 class SMILESDataset(Dataset):
-    def __init__(self, bin_file_path, indices_file_path, tokenizer):
-        """
-        Initialize the dataset.
-        Args:
-            bin_file_path (str): Path to the binary file containing SMILES strings
-            indices_file_path (str): Path to the .npy file containing indices
-        """
-        # Load indices
-        self.indices = np.load(indices_file_path)
+    def __init__(self, tokenizer, smiles_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
+        self.smiles = []
+        with open(smiles_file) as f:
+            for line in f:
+                self.smiles.append(line.strip())
         self.tokenizer = tokenizer
-        # Memory map the binary file for efficient access
-        self.bin_file = open(bin_file_path, 'rb')
-        self.mm = mmap.mmap(self.bin_file.fileno(), 0, access=mmap.ACCESS_READ)
-
-        with open("USPTO/all_mols.txt") as f:
-            self.all_uspto_mols = f.read().splitlines()
-
-        # Calculate total size
-        self.zink_size = len(self.indices)
-        self.uspto_factor = 100
-        self.uspto_size = len(self.all_uspto_mols)
-        self.total_size = self.zink_size + (self.uspto_size * self.uspto_factor)
-
-    def remove_stereochemistry(self, smiles):
-        """
-        Remove stereochemistry using RDKit.
-        """
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return smiles
-        Chem.RemoveStereochemistry(mol)
-        return Chem.MolToSmiles(mol)
 
     def __len__(self):
-        return self.total_size
+        return len(self.smiles)
 
     def __getitem__(self, idx):
-        """
-        Get a SMILES string at the given index.
-        Args:
-            idx (int): Index of the SMILES string to retrieve
-        Returns:
-            str: The SMILES string
-        """
-        # Get start index
-
-        if idx >= self.zink_size:
-            smile = self.all_uspto_mols[(idx - self.zink_size) % self.uspto_size]
-
-        else:
-            start_idx = self.indices[idx]
-
-            # Get end index (either next index or end of file)
-            if idx + 1 < self.total_size:
-                end_idx = self.indices[idx + 1]
-            else:
-                end_idx = len(self.mm)
-
-            # Read and decode the SMILES string
-            smile = self.mm[start_idx:end_idx].decode('utf-8')
-        smile = self.remove_stereochemistry(smile)
+        smile = self.smiles[idx]
         tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=75, return_tensors="pt")
         tokens = {k: v.squeeze(0) for k, v in tokens.items()}
         labels = tokens["input_ids"].clone()
         # replace pad tokens with -100
         labels[labels == self.tokenizer.pad_token_id] = -100
         tokens["labels"] = labels
-
         return tokens
-
-    def __del__(self):
-        """Cleanup when the dataset is destroyed"""
-        if hasattr(self, 'mm'):
-            self.mm.close()
-        if hasattr(self, 'bin_file'):
-            self.bin_file.close()
+    # def __init__(self, bin_file_path, indices_file_path, tokenizer):
+    #     """
+    #     Initialize the dataset.
+    #     Args:
+    #         bin_file_path (str): Path to the binary file containing SMILES strings
+    #         indices_file_path (str): Path to the .npy file containing indices
+    #     """
+    #     # Load indices
+    #     self.indices = np.load(indices_file_path)
+    #     self.tokenizer = tokenizer
+    #     # Memory map the binary file for efficient access
+    #     self.bin_file = open(bin_file_path, 'rb')
+    #     self.mm = mmap.mmap(self.bin_file.fileno(), 0, access=mmap.ACCESS_READ)
+    #
+    #     with open("USPTO/all_mols.txt") as f:
+    #         self.all_uspto_mols = f.read().splitlines()
+    #
+    #     # Calculate total size
+    #     self.zink_size = len(self.indices)
+    #     self.uspto_factor = 100
+    #     self.uspto_size = len(self.all_uspto_mols)
+    #     self.total_size = self.zink_size + (self.uspto_size * self.uspto_factor)
+    #
+    # def remove_stereochemistry(self, smiles):
+    #     """
+    #     Remove stereochemistry using RDKit.
+    #     """
+    #     mol = Chem.MolFromSmiles(smiles)
+    #     if mol is None:
+    #         return smiles
+    #     Chem.RemoveStereochemistry(mol)
+    #     return Chem.MolToSmiles(mol)
+    #
+    # def __len__(self):
+    #     return self.total_size
+    #
+    # def __getitem__(self, idx):
+    #     """
+    #     Get a SMILES string at the given index.
+    #     Args:
+    #         idx (int): Index of the SMILES string to retrieve
+    #     Returns:
+    #         str: The SMILES string
+    #     """
+    #     # Get start index
+    #
+    #     if idx >= self.zink_size:
+    #         smile = self.all_uspto_mols[(idx - self.zink_size) % self.uspto_size]
+    #
+    #     else:
+    #         start_idx = self.indices[idx]
+    #
+    #         # Get end index (either next index or end of file)
+    #         if idx + 1 < self.total_size:
+    #             end_idx = self.indices[idx + 1]
+    #         else:
+    #             end_idx = len(self.mm)
+    #
+    #         # Read and decode the SMILES string
+    #         smile = self.mm[start_idx:end_idx].decode('utf-8')
+    #     smile = self.remove_stereochemistry(smile)
+    #     tokens = self.tokenizer(smile, padding="max_length", truncation=True, max_length=75, return_tensors="pt")
+    #     tokens = {k: v.squeeze(0) for k, v in tokens.items()}
+    #     labels = tokens["input_ids"].clone()
+    #     # replace pad tokens with -100
+    #     labels[labels == self.tokenizer.pad_token_id] = -100
+    #     tokens["labels"] = labels
+    #
+    #     return tokens
+    #
+    # def __del__(self):
+    #     """Cleanup when the dataset is destroyed"""
+    #     if hasattr(self, 'mm'):
+    #         self.mm.close()
+    #     if hasattr(self, 'bin_file'):
+    #         self.bin_file.close()
 
 
 def compute_metrics(eval_pred):
@@ -195,7 +214,7 @@ if __name__ == "__main__":
     train_dataset, eval_dataset = random_split(
         dataset, [train_size, eval_size]
     )
-    suf="_both"
+    suf = "_pubchem"
     training_args = TrainingArguments(
         output_dir=f"./results{suf}",
         num_train_epochs=1,
