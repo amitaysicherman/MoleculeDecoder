@@ -206,9 +206,9 @@ if __name__ == "__main__":
     model, tokenizer = create_model()
 
     # Load the dataset
-    bin_file_path = "ZINK_PROCESSED/smiles.bin"
-    indices_file_path = "ZINK_PROCESSED/indices.npy"
-    dataset = SMILESDataset(bin_file_path, indices_file_path, tokenizer)
+    # bin_file_path = "ZINK_PROCESSED/smiles.bin"
+    # indices_file_path = "ZINK_PROCESSED/indices.npy"
+    dataset = SMILESDataset(tokenizer)
     train_size = len(dataset) - 100_000
     eval_size = 100_000
     train_dataset, eval_dataset = random_split(
