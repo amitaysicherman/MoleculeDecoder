@@ -28,7 +28,10 @@ class SMILESDataset(Dataset):
         self.smiles = []
         with open(smiles_file) as f:
             for line in f:
-                self.smiles.append(line.strip())
+                lines_smiles = line.strip().split("\t")[1]
+                print(lines_smiles)
+                self.smiles.append(lines_smiles)
+
         self.tokenizer = tokenizer
 
     def __len__(self):
