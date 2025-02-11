@@ -29,7 +29,6 @@ class SMILESDataset(Dataset):
         with open(smiles_file) as f:
             for line in f:
                 lines_smiles = line.strip().split()[1]
-                print(lines_smiles)
                 self.smiles.append(lines_smiles)
 
         self.tokenizer = tokenizer
