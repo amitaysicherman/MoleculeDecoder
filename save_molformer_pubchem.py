@@ -26,7 +26,9 @@ molformer = AutoModel.from_pretrained(
 ).to(device).eval()
 with open("pubchem-canonical/CID-SMILES-CANONICAL.smi") as f:
     smiles = f.readlines()
-
+print(f"Total number of smiles: {len(smiles)}")
+print(f"Start index: {start_index}")
+print(f"End index: {end_index}")
 smiles = smiles[start_index:end_index]
 random.shuffle(smiles)
 smiles = smiles[:samples]
