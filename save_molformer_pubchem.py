@@ -40,7 +40,8 @@ for i in tqdm(range(0, len(smiles), batch_size)):
     input_tokens = tokenizer(smiles_batch, padding="max_length", truncation=True, return_tensors="pt", max_length=75)
     input_ids = input_tokens["input_ids"].to(device)
     attention_mask = input_tokens["attention_mask"].to(device)
-    mol_outputs = molformer(input_ids, attention_mask=attention_mask)
+    with torch.no_grad():
+        mol_outputs = molformer(input_ids, attention_mask=attention_mask)
     np_output = mol_outputs.pooler_output.detach().cpu().numpy()
     all_outputs.append(np_output)
 np_output = np.concatenate(all_outputs, axis=0)
