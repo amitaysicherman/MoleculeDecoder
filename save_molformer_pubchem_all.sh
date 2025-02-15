@@ -13,4 +13,4 @@ TEN_MILION=10000000
 START_INDEX=$(($split_index * $TEN_MILION))
 END_INDEX=$(($START_INDEX + $TEN_MILION))
 
-python save_molformer_pubchem_all.py --start_index $START_INDEX --end_index $END_INDEX
+python save_molformer_pubchem.py --start_index $START_INDEX --end_index $END_INDEX
