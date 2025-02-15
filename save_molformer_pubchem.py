@@ -37,7 +37,7 @@ smiles = [s.split(" ")[1].strip() for s in smiles]
 all_outputs = []
 for i in tqdm(range(0, len(smiles), batch_size)):
     smiles_batch = smiles[i:i + batch_size]
-    input_tokens = tokenizer(smiles_batch, padding=True, truncation=True, return_tensors="pt", max_length=128)
+    input_tokens = tokenizer(smiles_batch, padding="max_length", truncation=True, return_tensors="pt", max_length=75)
     input_ids = input_tokens["input_ids"].to(device)
     attention_mask = input_tokens["attention_mask"].to(device)
     mol_outputs = molformer(input_ids, attention_mask=attention_mask)
