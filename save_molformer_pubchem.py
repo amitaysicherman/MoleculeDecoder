@@ -9,7 +9,7 @@ random.seed(42)
 parser = argparse.ArgumentParser()
 parser.add_argument("--start_index", type=int, default=0)
 parser.add_argument("--end_index", type=int, default=10000000)
-parser.add_argument("--samples", type=int, default=1e6)
+parser.add_argument("--samples", type=int, default=1000000)
 parser.add_argument("--batch_size", type=int, default=1024)
 args = parser.parse_args()
 start_index = args.start_index
