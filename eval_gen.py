@@ -6,7 +6,8 @@ from dataset import ReactionMolsDataset
 from torch.utils.data import DataLoader
 from transformers import AutoModel
 from trainer import get_mol_embeddings
-
+from train_decoder import _shift_right
+from tqdm import tqdm
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -155,7 +156,10 @@ for param in molformer.parameters():
 test_dataset = ReactionMolsDataset(base_dir="USPTO", split="test", debug=False)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-for batch in test_loader:
+is_correct = []
+is_correct2 = []
+pbar = tqdm(test_loader)
+for batch in pbar:
     batch = {k: v.to(device) for k, v in batch.items()}
     intput_embeddings = get_mol_embeddings(
         molformer,
@@ -175,42 +179,25 @@ for batch in test_loader:
         return__seq=True
     )
 
-    # generated_ids = generate(
-    #     decoder_model,
-    #     outputs[0][0:1],
-    #     max_length=50,
-    #     num_beams=10,
-    #     num_return_sequences=10,
-    #     eos_token_id=tokenizer.eos_token_id
-    # )
-    decoder_model(input_ids=batch['tgt_input_ids'], attention_mask=batch['tgt_token_attention_mask'])
-    generated_smiles = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+    mol_outputs = outputs[0][0:1]
+    encoder_outputs = decoder_model.proj(mol_outputs).unsqueeze(1)
+    # Run through decoder
+    input_ids = batch['tgt_input_ids'][0][:1]
+    decoder_input_ids = _shift_right(input_ids, decoder_model.config.decoder_start_token_id,
+                                     decoder_model.config.pad_token_id)
+    decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs, input_ids=decoder_input_ids)
+    lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
+    generated_ids = lm_logits.argmax(dim=-1)
+    generated_smiles = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
     real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'][0][0:1], skip_special_tokens=True)[0]
-    index = -1 if real_smiles not in generated_smiles else generated_smiles.index(real_smiles)
+    is_correct.append(real_smiles == generated_smiles)
 
 
-    generated_gt_emb = generate(
-        decoder_model,
-        output_embeddings[0][0:1],
-        max_length=50,
-        num_beams=10,
-        num_return_sequences=10,
-        eos_token_id=tokenizer.eos_token_id
-    )
-    generated_gt_smiles = tokenizer.batch_decode(generated_gt_emb, skip_special_tokens=True)
-    index2 = -1 if real_smiles not in generated_gt_smiles else generated_gt_smiles.index(real_smiles)
-    print("loss:", loss.item(), "index:", index, "index2:", index2)
+    decoder_output = decoder_model.decoder(encoder_hidden_states=output_embeddings[0][:1], input_ids=decoder_input_ids)
+    lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
+    generated_ids = lm_logits.argmax(dim=-1)
+    generated_smiles = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'][0][0:1], skip_special_tokens=True)[0]
+    is_correct2.append(real_smiles == generated_smiles)
 
-    labels = batch['tgt_input_ids'].clone()
-    labels[labels == tokenizer.pad_token_id] = -100
-
-    outputs=decoder_model(input_ids=batch['tgt_input_ids'], attention_mask=batch['tgt_token_attention_mask'], labels=labels)
-    pred_tokens = outputs.logits.argmax(dim=-1)
-    pred_smiles = tokenizer.batch_decode(pred_tokens, skip_special_tokens=True)
-
-
-    # print("Real SMILES:")
-    # print(real_smiles)
-    # for i, smiles in enumerate(generated_gt_smiles):
-    #     is_correct = smiles in real_smiles
-    #     print(f"SMILES {i + 1}: {smiles} ({smiles == real_smiles[0]})")
+    pbar.set_postfix({"correct": sum(is_correct) / len(is_correct), "gt_correct": sum(is_correct2) / len(is_correct2)})
