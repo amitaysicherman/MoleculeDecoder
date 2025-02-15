@@ -4,7 +4,7 @@ import numpy as np
 import argparse
 import os
 import random
-
+from tqdm import tqdm
 random.seed(42)
 parser = argparse.ArgumentParser()
 parser.add_argument("--start_index", type=int, default=0)
@@ -33,7 +33,7 @@ smiles = smiles[:samples]
 smiles = [s.split(" ")[1].strip() for s in smiles]
 
 all_outputs = []
-for i in range(0, len(smiles), batch_size):
+for i in tqdm(range(0, len(smiles), batch_size)):
     smiles_batch = smiles[i:i + batch_size]
     input_tokens = tokenizer(smiles_batch, padding=True, truncation=True, return_tensors="pt")
     input_ids = input_tokens["input_ids"].to(device)
