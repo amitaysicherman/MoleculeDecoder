@@ -112,7 +112,7 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     data_loader = get_data_loader(batch_size)
     model.train()
-    save_name_prefix = f"residual_vq_{num_quantizers}_{codebook_size}"
+    save_name_prefix = f"residual_vq_lr4_{num_quantizers}_{codebook_size}"
     best_loss = float("inf")
     for epoch in range(num_epochs):
         pbar = tqdm(data_loader)
@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     argparser.add_argument("--input_dim", type=int, default=768)  # Dimension of Molecular Transformer output
     argparser.add_argument("--batch_size_factor", type=int, default=10)
-    argparser.add_argument("--learning_rate", type=float, default=1e-5)
+    argparser.add_argument("--learning_rate", type=float, default=1e-4)
     argparser.add_argument("--num_epochs", type=int, default=100)
     args = argparser.parse_args()
     bs = args.batch_size_factor * args.codebook_size
