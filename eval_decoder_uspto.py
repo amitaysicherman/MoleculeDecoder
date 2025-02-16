@@ -1,7 +1,4 @@
-from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer, GenerationConfig
 import torch
-import numpy as np
-import os
 from train_decoder import create_model
 import tqdm
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -11,11 +8,13 @@ decoder_model.load_state_dict(
     torch.load("results/checkpoint-55000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
 decoder_model = decoder_model.to(device).eval()
 
-# with open("USPTO/all_mols.txt", "r") as f:
-#     all_uspto_mols = f.read().splitlines()
-with open("ZINK/AAAA.smi", "r") as f:
+
+
+
+with open("pubchem-canonical/CID-SMILES-CANONICAL.smi", "r") as f:
     all_uspto_mols = f.read().splitlines()
-    all_uspto_mols = [s.split()[0] for s in all_uspto_mols]
+    all_uspto_mols = [s.strip().split()[1] for s in all_uspto_mols]
+
 
 is_correct = []
 pbar= tqdm.tqdm(all_uspto_mols,total=len(all_uspto_mols))

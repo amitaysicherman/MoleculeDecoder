@@ -6,7 +6,51 @@ from vector_quantize_pytorch import ResidualVQ  # Import the ResidualVQ model
 import argparse
 import numpy as np
 from tqdm import tqdm
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def evaluate_with_decoder(model):
+    from train_decoder import _shift_right, create_model
+    decoder_model, tokenizer = create_model()
+    decoder_model.load_state_dict(
+        torch.load("results/checkpoint-55000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
+    decoder_model = decoder_model.to(device).eval()
+    with open("pubchem-canonical/CID-SMILES-CANONICAL.smi", "r") as f:
+        all_uspto_mols = f.read().splitlines()
+        all_uspto_mols = [s.strip().split()[1] for s in all_uspto_mols]
+
+    is_correct = []
+    pbar = tqdm(all_uspto_mols, total=len(all_uspto_mols))
+    for smiles in pbar:
+        tokens = tokenizer([smiles], padding="max_length", truncation=True, max_length=75, return_tensors="pt")
+        input_ids = tokens["input_ids"].to(device)
+        attention_mask = tokens["attention_mask"].to(device)
+        labels = tokens["input_ids"].clone()
+        # replace pad tokens with -100
+        labels[labels == tokenizer.pad_token_id] = -100
+        tokens["labels"] = labels
+        tokens = {k: v.to(device) for k, v in tokens.items()}
+        with torch.no_grad():
+            mol_outputs = decoder_model.molformer(input_ids, attention_mask=attention_mask)
+            encoder_outputs = decoder_model.proj(mol_outputs.pooler_output)
+            encoder_outputs_q, *_ = model(encoder_outputs)
+            encoder_outputs_q = encoder_outputs_q.unsqueeze(1)
+            decoder_input_ids = _shift_right(input_ids, decoder_model.config.decoder_start_token_id,
+                                             decoder_model.config.pad_token_id)
+            decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs_q, input_ids=decoder_input_ids)
+            lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
+        preds = lm_logits.argmax(-1)
+
+        mask = labels != -100
+
+        total_tokens = mask.sum()
+        correct_tokens = ((preds == labels) & mask).sum()
+        token_accuracy = correct_tokens / total_tokens
+
+        pred_smiles = tokenizer.decode(preds[0], skip_special_tokens=True)
+        is_correct.append(pred_smiles == smiles)
+        pbar.set_postfix({"correct": sum(is_correct) / len(is_correct), "token_accuracy": token_accuracy.item()})
 
 
 class VectorQuantizerDataset(torch.utils.data.Dataset):
@@ -48,25 +92,27 @@ def get_data_loader(batch_size):
     return DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
 
-def main(num_quantizers, codebook_size, input_dim, batch_size, batch_size_factor, learning_rate, num_epochs):
+def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, num_epochs):
     model = get_model(input_dim, num_quantizers, codebook_size)
     print(f"Number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    data_loader=get_data_loader(batch_size)
+    data_loader = get_data_loader(batch_size)
     model.train()
     for epoch in range(num_epochs):
         pbar = tqdm(data_loader)
         for x in pbar:
             optimizer.zero_grad()
-            x=x.to(device)
+            x = x.to(device)
             _, _, loss = model(x, return_all_codes=False)
             loss = loss.mean()
             loss.backward()
             optimizer.step()
             pbar.set_description(f"Loss: {loss.item()}")
+
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item()}")
-    torch.save(model.state_dict(), "residual_vq.pth")
+        torch.save(model.state_dict(), f"residual_vq_{epoch}.pth")
+        evaluate_with_decoder(model)
 
 
 if __name__ == "__main__":
@@ -75,11 +121,9 @@ if __name__ == "__main__":
     argparser.add_argument("--codebook_size", type=int, default=10)
 
     argparser.add_argument("--input_dim", type=int, default=768)  # Dimension of Molecular Transformer output
-    # argparser.add_argument("--batch_size", type=int, default=65536)
     argparser.add_argument("--batch_size_factor", type=int, default=100)
     argparser.add_argument("--learning_rate", type=float, default=1e-4)
     argparser.add_argument("--num_epochs", type=int, default=1)
     args = argparser.parse_args()
     bs = args.batch_size_factor * args.codebook_size
-    main(args.num_quantizers, args.codebook_size, args.input_dim, args.batch_size_factor * args.codebook_size,
-         bs, args.learning_rate, args.num_epochs)
+    main(args.num_quantizers, args.codebook_size, args.input_dim, bs, args.learning_rate, args.num_epochs)

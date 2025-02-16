@@ -137,7 +137,7 @@ def generate(
 
 decoder_model, tokenizer = create_model()
 decoder_model.load_state_dict(
-    torch.load("results/checkpoint-100000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
+    torch.load("results/checkpoint-55000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
 decoder_model = decoder_model.to(device).eval()
 concept_model = get_concept_model()
 concept_model.load_state_dict(
