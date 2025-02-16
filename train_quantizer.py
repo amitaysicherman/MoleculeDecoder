@@ -99,6 +99,7 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     data_loader = get_data_loader(batch_size)
     model.train()
+    save_name_prefix = f"residual_vq_{num_quantizers}_{codebook_size}"
     for epoch in range(num_epochs):
         pbar = tqdm(data_loader)
         for x in pbar:
@@ -111,7 +112,7 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
             pbar.set_description(f"Loss: {loss.item()}")
 
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item()}")
-        torch.save(model.state_dict(), f"residual_vq_{epoch}.pth")
+        torch.save(model.state_dict(), f"{save_name_prefix}_epoch_{epoch + 1}.pt")
         evaluate_with_decoder(model)
 
 
