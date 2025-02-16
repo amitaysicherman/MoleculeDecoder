@@ -30,7 +30,6 @@ def evaluate_with_decoder(model):
         # replace pad tokens with -100
         labels[labels == tokenizer.pad_token_id] = -100
         tokens["labels"] = labels
-        tokens = {k: v.to(device) for k, v in tokens.items()}
         with torch.no_grad():
             mol_outputs = decoder_model.molformer(input_ids, attention_mask=attention_mask)
             encoder_outputs = decoder_model.proj(mol_outputs.pooler_output)
@@ -127,4 +126,6 @@ if __name__ == "__main__":
     argparser.add_argument("--num_epochs", type=int, default=1)
     args = argparser.parse_args()
     bs = args.batch_size_factor * args.codebook_size
+    print("Arguments:", args)
+
     main(args.num_quantizers, args.codebook_size, args.input_dim, bs, args.learning_rate, args.num_epochs)
