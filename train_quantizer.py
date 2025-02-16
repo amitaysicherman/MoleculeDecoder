@@ -76,9 +76,9 @@ if __name__ == "__main__":
 
     argparser.add_argument("--input_dim", type=int, default=768)  # Dimension of Molecular Transformer output
     # argparser.add_argument("--batch_size", type=int, default=65536)
-    argparser.add_argument("--batch_size_factor", type=int, default=10)
-    argparser.add_argument("--learning_rate", type=float, default=1e-3)
-    argparser.add_argument("--num_epochs", type=int, default=10)
+    argparser.add_argument("--batch_size_factor", type=int, default=100)
+    argparser.add_argument("--learning_rate", type=float, default=1e-4)
+    argparser.add_argument("--num_epochs", type=int, default=1)
     args = argparser.parse_args()
     bs = args.batch_size_factor * args.codebook_size
     main(args.num_quantizers, args.codebook_size, args.input_dim, args.batch_size_factor * args.codebook_size,
