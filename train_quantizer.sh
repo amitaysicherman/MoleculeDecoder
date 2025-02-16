@@ -12,7 +12,7 @@ codebook_size_list=(256 512 1024 256 512 1024 256 512 1024)
 
 config_index=$(($SLURM_ARRAY_TASK_ID))
 # if config index > 9, then we need to subtract 9 from it and set learning_rate to 0.01
-if [ $config_index -ge 8 ];
+if [ $config_index -ge 9 ];
 then
     config_index=$(($config_index - 9))
     learning_rate=0.01
