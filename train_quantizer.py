@@ -21,12 +21,13 @@ def evaluate_with_decoder(model):
         all_uspto_mols = [s.strip().split()[1] for s in all_uspto_mols]
 
     is_correct = []
+    token_accuracy = []
     pbar = tqdm(all_uspto_mols, total=len(all_uspto_mols))
     for smiles in pbar:
         tokens = tokenizer([smiles], padding="max_length", truncation=True, max_length=75, return_tensors="pt")
         input_ids = tokens["input_ids"].to(device)
         attention_mask = tokens["attention_mask"].to(device)
-        labels = tokens["input_ids"].clone()
+        labels = input_ids.clone()
         # replace pad tokens with -100
         labels[labels == tokenizer.pad_token_id] = -100
         tokens["labels"] = labels
@@ -46,10 +47,10 @@ def evaluate_with_decoder(model):
         total_tokens = mask.sum()
         correct_tokens = ((preds == labels) & mask).sum()
         token_accuracy = correct_tokens / total_tokens
-
+        token_accuracy.append(token_accuracy.item())
         pred_smiles = tokenizer.decode(preds[0], skip_special_tokens=True)
         is_correct.append(pred_smiles == smiles)
-        pbar.set_postfix({"correct": sum(is_correct) / len(is_correct), "token_accuracy": token_accuracy.item()})
+        pbar.set_postfix({"correct": np.mean(is_correct), "token_accuracy": np.mean(token_accuracy)})
 
 
 class VectorQuantizerDataset(torch.utils.data.Dataset):
