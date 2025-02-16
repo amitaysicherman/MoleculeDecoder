@@ -7,21 +7,12 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 import random
+from train_decoder import _shift_right, create_model
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def evaluate_with_decoder(model):
-    from train_decoder import _shift_right, create_model
-    decoder_model, tokenizer = create_model()
-    decoder_model.load_state_dict(
-        torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
-    decoder_model = decoder_model.to(device).eval()
-    with open("pubchem-canonical/CID-SMILES-CANONICAL.smi", "r") as f:
-        all_uspto_mols = f.read().splitlines()
-        all_uspto_mols = [s.strip().split()[1] for s in all_uspto_mols]
-    random.seed(42)
-    all_uspto_mols = random.sample(all_uspto_mols, 250)
+def evaluate_with_decoder(model, decoder_model, tokenizer, all_uspto_mols):
     is_correct = []
     token_accuracy = []
     is_correct_not_q = []
@@ -108,6 +99,16 @@ def get_data_loader(batch_size):
 
 
 def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, num_epochs):
+    decoder_model, tokenizer = create_model()
+    decoder_model.load_state_dict(
+        torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
+    decoder_model = decoder_model.to(device).eval()
+    with open("pubchem-canonical/CID-SMILES-CANONICAL.smi", "r") as f:
+        all_uspto_mols = f.read().splitlines()
+        all_uspto_mols = [s.strip().split()[1] for s in all_uspto_mols]
+    random.seed(42)
+    all_uspto_mols = random.sample(all_uspto_mols, 250)
+
     model = get_model(input_dim, num_quantizers, codebook_size)
     print(f"Number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     model = model.to(device)
@@ -133,7 +134,7 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
             torch.save(model.state_dict(), f"{save_name_prefix + '_best'}.pt")
         # torch.save(model.state_dict(), f"{save_name_prefix}_epoch_{epoch + 1}.pt")
         if epoch % 5 == 0:
-            evaluate_with_decoder(model)
+            evaluate_with_decoder(model, decoder_model, tokenizer, all_uspto_mols)
 
 
 if __name__ == "__main__":
