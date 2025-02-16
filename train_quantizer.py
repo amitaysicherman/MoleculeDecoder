@@ -7,6 +7,7 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 import random
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -37,7 +38,7 @@ def evaluate_with_decoder(model):
         with torch.no_grad():
             mol_outputs = decoder_model.molformer(input_ids, attention_mask=attention_mask)
             encoder_outputs = decoder_model.proj(mol_outputs.pooler_output)
-            for q in [True,False]:
+            for q in [True, False]:
                 if q:
                     encoder_outputs_q, *_ = model(encoder_outputs)
                 else:
@@ -45,7 +46,8 @@ def evaluate_with_decoder(model):
                 encoder_outputs_q = encoder_outputs_q.unsqueeze(1)
                 decoder_input_ids = _shift_right(input_ids, decoder_model.config.decoder_start_token_id,
                                                  decoder_model.config.pad_token_id)
-                decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs_q, input_ids=decoder_input_ids)
+                decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs_q,
+                                                       input_ids=decoder_input_ids)
                 lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
                 preds = lm_logits.argmax(-1)
                 mask = labels != -100
@@ -60,7 +62,8 @@ def evaluate_with_decoder(model):
                     token_accuracy_n.append(correct_tokens.item())
                     is_correct_not_q.append(pred_smiles == smiles)
             pbar.set_postfix({"correct": np.mean(is_correct), "token_accuracy": np.mean(token_accuracy),
-                              "correct_not_q": np.mean(is_correct_not_q), "token_accuracy_n": np.mean(token_accuracy_n)})
+                              "correct_not_q": np.mean(is_correct_not_q),
+                              "token_accuracy_n": np.mean(token_accuracy_n)})
 
 
 class VectorQuantizerDataset(torch.utils.data.Dataset):
@@ -110,6 +113,7 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
     data_loader = get_data_loader(batch_size)
     model.train()
     save_name_prefix = f"residual_vq_{num_quantizers}_{codebook_size}"
+    best_loss = float("inf")
     for epoch in range(num_epochs):
         pbar = tqdm(data_loader)
         for x in pbar:
@@ -122,8 +126,12 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
             pbar.set_description(f"Loss: {loss.item()}")
 
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item()}")
-        torch.save(model.state_dict(), f"{save_name_prefix}_epoch_{epoch + 1}.pt")
-        evaluate_with_decoder(model)
+        if loss < best_loss:
+            best_loss = loss
+            torch.save(model.state_dict(), f"{save_name_prefix + '_best'}.pt")
+        # torch.save(model.state_dict(), f"{save_name_prefix}_epoch_{epoch + 1}.pt")
+        if (epoch + 1) % 25 == 0:
+            evaluate_with_decoder(model)
 
 
 if __name__ == "__main__":
@@ -134,7 +142,7 @@ if __name__ == "__main__":
     argparser.add_argument("--input_dim", type=int, default=768)  # Dimension of Molecular Transformer output
     argparser.add_argument("--batch_size_factor", type=int, default=10)
     argparser.add_argument("--learning_rate", type=float, default=1e-5)
-    argparser.add_argument("--num_epochs", type=int, default=10)
+    argparser.add_argument("--num_epochs", type=int, default=100)
     args = argparser.parse_args()
     bs = args.batch_size_factor * args.codebook_size
     print("Arguments:", args)
