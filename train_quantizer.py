@@ -147,7 +147,7 @@ if __name__ == "__main__":
     argparser.add_argument("--num_epochs", type=int, default=10)
     args = argparser.parse_args()
     bs = args.batch_size_factor * args.codebook_size
-    bs=min(bs, 100_000)
+    bs=min(bs, 50_000)
     print("Arguments:", args)
 
     main(args.num_quantizers, args.codebook_size, args.input_dim, bs, args.learning_rate, args.num_epochs)
