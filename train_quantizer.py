@@ -132,7 +132,7 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
             best_loss = loss
             torch.save(model.state_dict(), f"{save_name_prefix + '_best'}.pt")
         # torch.save(model.state_dict(), f"{save_name_prefix}_epoch_{epoch + 1}.pt")
-        if epoch  % 5 == 0:
+        if epoch % 5 == 0:
             evaluate_with_decoder(model)
 
 
@@ -144,10 +144,10 @@ if __name__ == "__main__":
     argparser.add_argument("--input_dim", type=int, default=768)  # Dimension of Molecular Transformer output
     argparser.add_argument("--batch_size_factor", type=int, default=100)
     argparser.add_argument("--learning_rate", type=float, default=1e-5)
-    argparser.add_argument("--num_epochs", type=int, default=10)
+    argparser.add_argument("--num_epochs", type=int, default=100)
     args = argparser.parse_args()
     bs = args.batch_size_factor * args.codebook_size
-    bs=min(bs, 10_000)
+    bs = min(bs, 10_000 if args.codebook_size >= 512 else 50_000)
     print("Arguments:", args)
 
     main(args.num_quantizers, args.codebook_size, args.input_dim, bs, args.learning_rate, args.num_epochs)
