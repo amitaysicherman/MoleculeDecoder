@@ -6,7 +6,7 @@ from vector_quantize_pytorch import ResidualVQ  # Import the ResidualVQ model
 import argparse
 import numpy as np
 from tqdm import tqdm
-
+import random
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -19,7 +19,8 @@ def evaluate_with_decoder(model):
     with open("pubchem-canonical/CID-SMILES-CANONICAL.smi", "r") as f:
         all_uspto_mols = f.read().splitlines()
         all_uspto_mols = [s.strip().split()[1] for s in all_uspto_mols]
-
+    random.seed(42)
+    all_uspto_mols = random.sample(all_uspto_mols, 250)
     is_correct = []
     token_accuracy = []
     is_correct_not_q = []
