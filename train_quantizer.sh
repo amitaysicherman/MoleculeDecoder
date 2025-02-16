@@ -7,7 +7,7 @@
 #SBATCH --array=1-12
 
 # configs: num_quantizers, codebook_size
-num_quantizers_list=(1 1 1 5 5 5 10 10 10 50 50 50)
+num_quantizers_list=(1 1 1 8 8 8 32 32 32 64 64 64)
 codebook_size_list=(256 512 1024 256 512 1024 256 512 1024 256 512 1024)
 
 config_index=$(($SLURM_ARRAY_TASK_ID - 1))
