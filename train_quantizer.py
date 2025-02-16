@@ -14,7 +14,7 @@ def evaluate_with_decoder(model):
     from train_decoder import _shift_right, create_model
     decoder_model, tokenizer = create_model()
     decoder_model.load_state_dict(
-        torch.load("results_pubchem/checkpoint-90000", map_location=torch.device('cpu')), strict=True)
+        torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
     decoder_model = decoder_model.to(device).eval()
     with open("pubchem-canonical/CID-SMILES-CANONICAL.smi", "r") as f:
         all_uspto_mols = f.read().splitlines()
