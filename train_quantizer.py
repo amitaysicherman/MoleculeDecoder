@@ -132,7 +132,7 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
             best_loss = loss
             torch.save(model.state_dict(), f"{save_name_prefix + '_best'}.pt")
         # torch.save(model.state_dict(), f"{save_name_prefix}_epoch_{epoch + 1}.pt")
-        if (epoch + 1) % 5 == 0:
+        if epoch  % 5 == 0:
             evaluate_with_decoder(model)
 
 
