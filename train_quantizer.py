@@ -22,6 +22,8 @@ def evaluate_with_decoder(model):
 
     is_correct = []
     token_accuracy = []
+    is_correct_not_q = []
+    token_accuracy_n = []
     pbar = tqdm(all_uspto_mols, total=len(all_uspto_mols))
     for smiles in pbar:
         tokens = tokenizer([smiles], padding="max_length", truncation=True, max_length=75, return_tensors="pt")
@@ -34,23 +36,30 @@ def evaluate_with_decoder(model):
         with torch.no_grad():
             mol_outputs = decoder_model.molformer(input_ids, attention_mask=attention_mask)
             encoder_outputs = decoder_model.proj(mol_outputs.pooler_output)
-            encoder_outputs_q, *_ = model(encoder_outputs)
-            encoder_outputs_q = encoder_outputs_q.unsqueeze(1)
-            decoder_input_ids = _shift_right(input_ids, decoder_model.config.decoder_start_token_id,
-                                             decoder_model.config.pad_token_id)
-            decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs_q, input_ids=decoder_input_ids)
-            lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
-        preds = lm_logits.argmax(-1)
-
-        mask = labels != -100
-
-        total_tokens = mask.sum()
-        correct_tokens = ((preds == labels) & mask).sum()
-        token_accuracy = correct_tokens / total_tokens
-        token_accuracy.append(token_accuracy.item())
-        pred_smiles = tokenizer.decode(preds[0], skip_special_tokens=True)
-        is_correct.append(pred_smiles == smiles)
-        pbar.set_postfix({"correct": np.mean(is_correct), "token_accuracy": np.mean(token_accuracy)})
+            for q in [True,False]:
+                if q:
+                    encoder_outputs_q, *_ = model(encoder_outputs)
+                else:
+                    encoder_outputs_q = encoder_outputs
+                encoder_outputs_q = encoder_outputs_q.unsqueeze(1)
+                decoder_input_ids = _shift_right(input_ids, decoder_model.config.decoder_start_token_id,
+                                                 decoder_model.config.pad_token_id)
+                decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs_q, input_ids=decoder_input_ids)
+                lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
+                preds = lm_logits.argmax(-1)
+                mask = labels != -100
+                total_tokens = mask.sum()
+                correct_tokens = ((preds == labels) & mask).sum()
+                correct_tokens = correct_tokens / total_tokens
+                pred_smiles = tokenizer.decode(preds[0], skip_special_tokens=True)
+                if q:
+                    token_accuracy.append(correct_tokens.item())
+                    is_correct.append(pred_smiles == smiles)
+                else:
+                    token_accuracy_n.append(correct_tokens.item())
+                    is_correct_not_q.append(pred_smiles == smiles)
+            pbar.set_postfix({"correct": np.mean(is_correct), "token_accuracy": np.mean(token_accuracy),
+                              "correct_not_q": np.mean(is_correct_not_q), "token_accuracy_n": np.mean(token_accuracy_n)})
 
 
 class VectorQuantizerDataset(torch.utils.data.Dataset):
