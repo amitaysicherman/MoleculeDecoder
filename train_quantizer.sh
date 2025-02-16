@@ -19,8 +19,9 @@ then
 else
     learning_rate=0.001
 fi
+
 num_quantizers=${num_quantizers_list[$config_index]}
 codebook_size=${codebook_size_list[$config_index]}
-
+echo "num_quantizers: $num_quantizers, codebook_size: $codebook_size, learning_rate: $learning_rate, config_index: $config_index"
 
 python train_quantizer.py --num_quantizers $num_quantizers --codebook_size $codebook_size --learning_rate $learning_rate
