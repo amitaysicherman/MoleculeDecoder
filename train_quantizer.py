@@ -97,7 +97,7 @@ def get_model(input_dim, num_quantizers, codebook_size):
         learnable_codebook=True,  # Make codebook learnable
         ema_update=False,  # Use gradient descent instead of EMA
         kmeans_init=True,  # set to True
-        kmeans_iters=10  # number of kmeans iterations to calculate the centroids for the codebook on init
+        kmeans_iters=100  # number of kmeans iterations to calculate the centroids for the codebook on init
     )
     return model
 
@@ -142,11 +142,12 @@ if __name__ == "__main__":
     argparser.add_argument("--codebook_size", type=int, default=512)
 
     argparser.add_argument("--input_dim", type=int, default=768)  # Dimension of Molecular Transformer output
-    argparser.add_argument("--batch_size_factor", type=int, default=100)
+    argparser.add_argument("--batch_size_factor", type=int, default=1000)
     argparser.add_argument("--learning_rate", type=float, default=1e-4)
     argparser.add_argument("--num_epochs", type=int, default=10)
     args = argparser.parse_args()
     bs = args.batch_size_factor * args.codebook_size
+    bs=min(bs, 1_000_000)
     print("Arguments:", args)
 
     main(args.num_quantizers, args.codebook_size, args.input_dim, bs, args.learning_rate, args.num_epochs)
