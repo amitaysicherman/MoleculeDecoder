@@ -167,7 +167,7 @@ if __name__ == "__main__":
     from train_decoder import create_model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, tokenizer = create_model()
-    model.load_state_dict(torch.load("results/checkpoint-15000/pytorch_model.bin"),strict=False)
+    model.load_state_dict(torch.load("results_pubchem/checkpoint-15000/pytorch_model.bin"), strict=False)
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 

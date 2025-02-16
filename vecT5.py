@@ -173,7 +173,7 @@ def train_vector_t5():
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1024, shuffle=True)
     # adamW optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
-    log_file = "results/vector_t5_log.txt"
+    log_file = "results_pubchem/vector_t5_log.txt"
     # Training loop
     model.train()
     for epoch in range(num_epochs):
@@ -198,7 +198,7 @@ def train_vector_t5():
             print(f"{epoch}|{i}/{len(dataloader)}, Loss: {loss.item():.4f}\n")
             eval_with_decoder(model, batch, log_file)
             # exit(0)
-        output_file = f"results/vector_t5_epoch_{epoch}.pt"
+        output_file = f"results_pubchem/vector_t5_epoch_{epoch}.pt"
         torch.save(model.state_dict(), output_file)
 
 
@@ -207,7 +207,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     decoder_model, tokenizer = create_model()
     try:
-        decoder_model.load_state_dict(torch.load("results/checkpoint-25000/pytorch_model.bin"), strict=False)
+        decoder_model.load_state_dict(torch.load("results_pubchem/checkpoint-25000/pytorch_model.bin"), strict=False)
     except:
         print("No model found")
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

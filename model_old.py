@@ -23,7 +23,7 @@ class VectorT5(T5PreTrainedModel):
             param.requires_grad = False
 
         self.tokens_decoder.load_state_dict(
-            torch.load('results/checkpoint-55000/pytorch_model.bin', map_location='cpu'), strict=False)
+            torch.load('results_pubchem/checkpoint-90000/pytorch_model.bin', map_location='cpu'), strict=False)
         self.tokens_decoder = self.tokens_decoder.to(device)
         for param in self.tokens_decoder.parameters():
             param.requires_grad = False
