@@ -8,11 +8,12 @@ import numpy as np
 from tqdm import tqdm
 import random
 from train_decoder import _shift_right, create_model
-
+import os
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+output_file_res = "results_pubchem/quantizer_results.txt"
 
 
-def evaluate_with_decoder(model, decoder_model, tokenizer, all_uspto_mols):
+def evaluate_with_decoder(model, decoder_model, tokenizer, all_uspto_mols,config_name,epoch):
     is_correct = []
     token_accuracy = []
     is_correct_not_q = []
@@ -55,6 +56,8 @@ def evaluate_with_decoder(model, decoder_model, tokenizer, all_uspto_mols):
             pbar.set_postfix({"correct": np.mean(is_correct), "token_accuracy": np.mean(token_accuracy),
                               "correct_not_q": np.mean(is_correct_not_q),
                               "token_accuracy_n": np.mean(token_accuracy_n)})
+    with open(output_file_res, "a") as f:
+        f.write(f"{config_name},{epoch},{np.mean(is_correct)},{np.mean(token_accuracy)},{np.mean(is_correct_not_q)},{np.mean(token_accuracy_n)}\n")
 
 
 class VectorQuantizerDataset(torch.utils.data.Dataset):
@@ -115,7 +118,8 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     data_loader = get_data_loader(batch_size)
     model.train()
-    save_name_prefix = f"residual_vq_lr4_{num_quantizers}_{codebook_size}"
+    config_name=f"{num_quantizers}_{codebook_size}_{input_dim}_{batch_size}_{learning_rate}_{num_epochs}"
+    save_name_prefix = f"residual_vq_lr_{config_name}"
     best_loss = float("inf")
     for epoch in range(num_epochs):
         pbar = tqdm(data_loader)
@@ -134,7 +138,7 @@ def main(num_quantizers, codebook_size, input_dim, batch_size, learning_rate, nu
             torch.save(model.state_dict(), f"{save_name_prefix + '_best'}.pt")
         # torch.save(model.state_dict(), f"{save_name_prefix}_epoch_{epoch + 1}.pt")
         if epoch % 5 == 0:
-            evaluate_with_decoder(model, decoder_model, tokenizer, all_uspto_mols)
+            evaluate_with_decoder(model, decoder_model, tokenizer, all_uspto_mols,config_name,epoch)
 
 
 if __name__ == "__main__":
