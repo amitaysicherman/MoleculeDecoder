@@ -3,7 +3,28 @@ from transformers.models.t5.modeling_t5 import T5Stack
 import torch
 import torch.nn as nn
 from typing import Optional, Tuple
+import copy
 
+
+class EmbeddingSum(nn.Module):
+    def __init__(self, num_embeddings, embedding_dim):
+        super().__init__()
+        self.embeddings = nn.ModuleList([
+            nn.Embedding(num_embeddings, embedding_dim)
+            for _ in range(num_embeddings)
+        ])
+    def forward(self, input_ids):
+        embedded = torch.zeros(
+            input_ids.shape[0],
+            input_ids.shape[1],
+            self.embeddings[0].embedding_dim,
+            device=input_ids.device
+        )
+
+        for i, embedding_layer in enumerate(self.embeddings):
+            embedded += embedding_layer(input_ids[..., i])
+
+        return embedded
 
 class T5ForResidualQuantization(T5PreTrainedModel):
     def __init__(self, config: T5Config, num_quantization: int):
@@ -11,19 +32,21 @@ class T5ForResidualQuantization(T5PreTrainedModel):
         self.num_quantization = num_quantization
 
         # Modified shared embedding
-        self.shared = nn.ModuleList([
-            nn.Embedding(config.vocab_size, config.d_model)
-            for _ in range(num_quantization)
-        ])
+        self.shared = EmbeddingSum(num_quantization, config.d_model)
 
-        self.encoder = T5Stack(config, self.shared[0])  # Use first embedding for encoder
 
-        decoder_config = config.copy()
+        encoder_config = copy.deepcopy(config)
+        encoder_config.is_decoder = False
+        encoder_config.use_cache = False
+        encoder_config.is_encoder_decoder = False
+        self.encoder = T5Stack(encoder_config, self.shared)
+
+        decoder_config = copy.deepcopy(config)
         decoder_config.is_decoder = True
         decoder_config.is_encoder_decoder = False
-        self.decoder = T5Stack(decoder_config, self.shared[0])  # Use first embedding for decoder
+        decoder_config.num_layers = config.num_decoder_layers
+        self.decoder = T5Stack(decoder_config, self.shared)
 
-        # Modified LM head
         self.lm_head = nn.ModuleList([
             nn.Linear(config.d_model, config.vocab_size, bias=False)
             for _ in range(num_quantization)
@@ -32,31 +55,6 @@ class T5ForResidualQuantization(T5PreTrainedModel):
         # Initialize weights
         self.post_init()
 
-    def get_input_embeddings(self):
-        return self.shared[0]  # Return first embedding for compatibility
-
-    def set_input_embeddings(self, new_embeddings):
-        self.shared = new_embeddings
-
-    def embed_tokens(self, input_ids):
-        """Custom embedding function for residual quantization"""
-        # Reshape input_ids from (batch, seq_len*num_quantization) to (batch, seq_len, num_quantization)
-        batch_size = input_ids.shape[0]
-        seq_length = input_ids.shape[1] // self.num_quantization
-        input_ids = input_ids.view(batch_size, seq_length, self.num_quantization)
-
-        # Apply each embedding and sum
-        embedded = torch.zeros(
-            batch_size,
-            seq_length,
-            self.config.d_model,
-            device=input_ids.device
-        )
-
-        for i, embedding_layer in enumerate(self.shared):
-            embedded += embedding_layer(input_ids[..., i])
-
-        return embedded
 
     def forward(
             self,
@@ -81,11 +79,11 @@ class T5ForResidualQuantization(T5PreTrainedModel):
 
         # Handle inputs embedding
         if inputs_embeds is None and input_ids is not None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.shared(input_ids)
 
         # Handle decoder inputs embedding
         if decoder_inputs_embeds is None and decoder_input_ids is not None:
-            decoder_inputs_embeds = self.embed_tokens(decoder_input_ids)
+            decoder_inputs_embeds = self.shared(decoder_input_ids)
 
         # Encode if needed
         if encoder_outputs is None:
