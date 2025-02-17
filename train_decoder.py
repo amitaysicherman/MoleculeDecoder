@@ -140,8 +140,15 @@ def create_model(q_cp=""):
 
     if q_cp:
         print(f"Loading model to cuntinue training")
-        model.load_state_dict(
-            torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')))
+        miss = model.load_state_dict(
+            torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')),
+            strict=False)
+        # if start with q_model it's ok , if not it's not ok
+        for key in miss.missing_keys:
+            if "q_model" not in key:
+                print(f"Missing key: {key}")
+        for key in miss.unexpected_keys:
+            print(f"Unexpected key: {key}")
     return model, tokenizer
 
 
