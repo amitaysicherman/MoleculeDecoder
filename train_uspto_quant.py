@@ -11,7 +11,7 @@ quantization_codebook_size = 512  # Adjust based on your data
 
 
 class ResidualQuantizationDataset(Dataset):
-    def __init__(self, src_path: str, tgt_path: str, max_length: int = 10*64):
+    def __init__(self, src_path: str, tgt_path: str, max_length: int = 5*64):
         """
         Args:
             src_path: Path to source tokens file
@@ -153,4 +153,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-    
