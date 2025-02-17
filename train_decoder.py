@@ -4,10 +4,10 @@ import torch
 from torch.utils.data import Dataset, random_split
 from transformers import Trainer, TrainingArguments
 import torch.nn as nn
-from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer,PreTrainedModel
+from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer, PreTrainedModel
 from transformers.modeling_outputs import Seq2SeqLMOutput
 from torch.nn import functional as F
-
+from vector_quantize_pytorch import ResidualVQ
 
 
 def _shift_right(input_ids, decoder_start_token_id, pad_token_id):
@@ -43,6 +43,7 @@ class SMILESDataset(Dataset):
         tokens["labels"] = labels
         return tokens
 
+
 def compute_metrics(eval_pred):
     """
     Compute metrics for evaluation
@@ -62,7 +63,7 @@ def compute_metrics(eval_pred):
 
 
 class MolFormerT5Decoder(PreTrainedModel):
-    def __init__(self, config):
+    def __init__(self, config, q_cp=""):
         super().__init__(config)
         # Load and freeze MolFormer
         self.molformer = AutoModel.from_pretrained(
@@ -82,11 +83,28 @@ class MolFormerT5Decoder(PreTrainedModel):
         T5 = T5ForConditionalGeneration(config)
         self.decoder = T5.get_decoder()
         self.lm_head = T5.lm_head
+        if q_cp:
+            _, _, _, num_quantizers, codebook_size, input_dim, _, _, _, _ = q_cp.split("/")[-1].split("_")
+            self.q_model = ResidualVQ(
+                dim=int(input_dim),
+                num_quantizers=int(num_quantizers),
+                codebook_size=int(codebook_size),
+                ema_update=False,  # Use gradient descent instead of EMA
+            )
+            self.q_model.load_state_dict(torch.load(q_cp,map_location=torch.device('cpu')))
+            for param in self.q_model.parameters():
+                param.requires_grad = False
+            self.q_model.eval()
+        else:
+            self.q_model = None
 
     def forward(self, input_ids, attention_mask=None, labels=None):
         # Get MolFormer embedding
         mol_outputs = self.molformer(input_ids, attention_mask=attention_mask)
-        encoder_outputs = self.proj(mol_outputs.pooler_output).unsqueeze(1)
+        encoder_outputs = self.proj(mol_outputs.pooler_output)
+        if self.q_model:
+            encoder_outputs, *_ = self.q_model(encoder_outputs)
+        encoder_outputs = encoder_outputs.unsqueeze(1)
         decoder_input_ids = _shift_right(input_ids, self.config.decoder_start_token_id, self.config.pad_token_id)
         decoder_output = self.decoder(encoder_hidden_states=encoder_outputs, input_ids=decoder_input_ids)
         lm_logits = self.lm_head(decoder_output.last_hidden_state)
@@ -98,7 +116,7 @@ class MolFormerT5Decoder(PreTrainedModel):
         )
 
 
-def create_model():
+def create_model(q_cp=""):
     # Initialize tokenizer
     tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
     # Initialize config
@@ -113,7 +131,7 @@ def create_model():
         num_heads=8,
         decoder_start_token_id=tokenizer.pad_token_id,
     )
-    model = MolFormerT5Decoder(config)
+    model = MolFormerT5Decoder(config, q_cp)
     # print number of parameters
     print(f"Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
     # number of non trainable parameters
@@ -124,7 +142,13 @@ def create_model():
 
 # Example usage
 if __name__ == "__main__":
-    model, tokenizer = create_model()
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--q_cp", type=str, default="results_pubchem/residual_vq_lr_64_512_768_10000_0.001_100_best.pt")
+    args = parser.parse_args()
+
+    model, tokenizer = create_model(args.q_cp)
 
     dataset = SMILESDataset(tokenizer)
     train_size = len(dataset) - 100_000
