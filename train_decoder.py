@@ -91,7 +91,7 @@ class MolFormerT5Decoder(PreTrainedModel):
                 codebook_size=int(codebook_size),
                 ema_update=False,  # Use gradient descent instead of EMA
             )
-            self.q_model.load_state_dict(torch.load(q_cp,map_location=torch.device('cpu')))
+            self.q_model.load_state_dict(torch.load(q_cp, map_location=torch.device('cpu')))
             for param in self.q_model.parameters():
                 param.requires_grad = False
             self.q_model.eval()
@@ -137,6 +137,11 @@ def create_model(q_cp=""):
     # number of non trainable parameters
     print(f"Number of non-trainable parameters: {sum(p.numel() for p in model.parameters() if not p.requires_grad):,}")
     print(model)
+
+    if q_cp:
+        print(f"Loading model to cuntinue training")
+        model.load_state_dict(
+            torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')))
     return model, tokenizer
 
 
@@ -161,15 +166,15 @@ if __name__ == "__main__":
         suf += "_quantized"
     training_args = TrainingArguments(
         output_dir=f"./results{suf}",
-        num_train_epochs=10,
+        num_train_epochs=10 if not args.q_cp else 5,
         per_device_train_batch_size=1024,
         per_device_eval_batch_size=1024,
         learning_rate=1e-4,  # Constant learning rate
         logging_dir=f'./logs{suf}',
-        logging_steps=1_000,
-        save_steps=5_000,
+        logging_steps=1_000 if not args.q_cp else 500,
+        save_steps=5_000 if not args.q_cp else 500,
         eval_accumulation_steps=2,
-        eval_steps=5_000,  # Evaluate every 500 steps
+        eval_steps=5_000 if not args.q_cp else 500,
         evaluation_strategy="steps",
         report_to=["tensorboard"],
         lr_scheduler_type="constant",  # Use constant learning rate
