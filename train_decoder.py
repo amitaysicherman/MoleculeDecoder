@@ -200,6 +200,7 @@ if __name__ == "__main__":
         eval_dataset=eval_dataset,
         compute_metrics=compute_metrics,
     )
+    trainer.evaluate()
 
     trainer.train(resume_from_checkpoint=False)
     model.save_pretrained("path/to/save/model")
