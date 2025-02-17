@@ -134,8 +134,9 @@ class T5ForResidualQuantization(T5PreTrainedModel):
 
         # Apply multiple LM heads
         logits = []
-        for lm_head_layer in self.lm_head:
-            logits.append(lm_head_layer(sequence_output))
+        for i,lm_head_layer in enumerate(self.lm_head):
+            index_range = range(i, sequence_output.shape[1], self.num_quantization)
+            logits.append(lm_head_layer(sequence_output[:, index_range]))
 
         # Stack and reshape logits
         logits = torch.stack(logits, dim=2)  # (batch, seq_len, num_quantization, vocab_size)
