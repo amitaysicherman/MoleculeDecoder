@@ -157,6 +157,8 @@ if __name__ == "__main__":
         dataset, [train_size, eval_size]
     )
     suf = "_pubchem"
+    if args.q_cp:
+        suf += "_quantized"
     training_args = TrainingArguments(
         output_dir=f"./results{suf}",
         num_train_epochs=10,
