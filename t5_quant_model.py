@@ -7,11 +7,10 @@ import copy
 
 
 
-def _shift_right(emb, pad_token):
-    return torch.cat(
-        [pad_token.expand(emb.size(0), -1, -1),
-         emb[:, :-1]], dim=1
-    )
+def _shift_right(emb, pad_token=0):
+    print(pad_token)
+    pad_token = torch.full((emb.size(0), 1, emb.size(-1)), pad_token, dtype=emb.dtype, device=emb.device)
+    return torch.cat([pad_token, emb[:, :-1, :]], dim=1)
 
 
 class EmbeddingSum(nn.Module):
@@ -101,7 +100,7 @@ class T5ForResidualQuantization(T5PreTrainedModel):
         # Handle decoder inputs embedding
         if decoder_inputs_embeds is None and labels is not None:
             decoder_inputs_embeds = self.shared(labels)
-        decoder_inputs_embeds = _shift_right(decoder_inputs_embeds, self.vocab_size)
+        decoder_inputs_embeds = _shift_right(decoder_inputs_embeds, self.config.vocab_size)
 
         # Encode if needed
         if encoder_outputs is None:
@@ -134,19 +133,19 @@ class T5ForResidualQuantization(T5PreTrainedModel):
 
         # Apply multiple LM heads
         logits = []
-        for i,lm_head_layer in enumerate(self.lm_head):
-            index_range = range(i, sequence_output.shape[1], self.num_quantization)
-            logits.append(lm_head_layer(sequence_output[:, index_range]))
+        for lm_head_layer in self.lm_head:
+            logits.append(lm_head_layer(sequence_output))
 
-        # Stack and reshape logits
         logits = torch.stack(logits, dim=2)  # (batch, seq_len, num_quantization, vocab_size)
         batch_size = logits.shape[0]
         seq_length = logits.shape[1]
         logits = logits.view(batch_size, seq_length * self.num_quantization, -1)
-
+        # print(logits.shape)
+        # print(logits.argmax(dim=-1))
+        # print(labels)
         loss = None
         if labels is not None:
-            loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
+            loss_fct = nn.CrossEntropyLoss(ignore_index=512)
             loss = loss_fct(logits.view(-1, self.config.vocab_size), labels.view(-1))
 
         return (loss, logits) if loss is not None else logits

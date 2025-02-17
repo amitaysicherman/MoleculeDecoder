@@ -125,7 +125,7 @@ def main():
         save_safetensors=False,
         lr_scheduler_type="constant",  # Use constant learning rate
         eval_accumulation_steps=2,
-        learning_rate=1e-4,  # Constant learning rate
+        learning_rate=1e-3,  # Constant learning rate
         save_total_limit=1,
         report_to=["tensorboard"],
     )
