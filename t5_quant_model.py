@@ -6,11 +6,12 @@ from typing import Optional, Tuple
 import copy
 
 
-
-def _shift_right(emb, pad_token=0):
-    print(pad_token)
-    pad_token = torch.full((emb.size(0), 1, emb.size(-1)), pad_token, dtype=emb.dtype, device=emb.device)
-    return torch.cat([pad_token, emb[:, :-1, :]], dim=1)
+def _shift_right(emb, decoder_start_embedding):
+    decoder_inputs = torch.cat(
+        [decoder_start_embedding.expand(emb.size(0), -1, -1),
+         emb[:, :-1]], dim=1
+    )
+    return decoder_inputs
 
 
 class EmbeddingSum(nn.Module):
@@ -68,6 +69,7 @@ class T5ForResidualQuantization(T5PreTrainedModel):
             nn.Linear(config.d_model, config.vocab_size, bias=False)
             for _ in range(num_quantization)
         ])
+        self.decoder_start_embedding = nn.Parameter(torch.randn(1, 1, config.d_model))
 
         # Initialize weights
         self.post_init()
@@ -100,7 +102,7 @@ class T5ForResidualQuantization(T5PreTrainedModel):
         # Handle decoder inputs embedding
         if decoder_inputs_embeds is None and labels is not None:
             decoder_inputs_embeds = self.shared(labels)
-        decoder_inputs_embeds = _shift_right(decoder_inputs_embeds, self.config.vocab_size)
+        decoder_inputs_embeds = _shift_right(decoder_inputs_embeds, self.decoder_start_embedding)
 
         # Encode if needed
         if encoder_outputs is None:
