@@ -107,7 +107,6 @@ def main():
 
                         # Convert to string and write
                         indexes_str = " ".join(map(str, line_indexes.cpu().numpy().flatten()))
-                        print(len(indexes_str.split()), num_mols,indexes_str)
                         f.write(indexes_str + "\n")
 
                     processed_lines += num_lines
