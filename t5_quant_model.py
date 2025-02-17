@@ -9,22 +9,28 @@ import copy
 class EmbeddingSum(nn.Module):
     def __init__(self, num_embeddings, embedding_dim):
         super().__init__()
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+
         self.embeddings = nn.ModuleList([
-            nn.Embedding(num_embeddings, embedding_dim)
+            nn.Embedding(num_embeddings+1, embedding_dim)
             for _ in range(num_embeddings)
         ])
+
     def forward(self, input_ids):
-        embedded = torch.zeros(
-            input_ids.shape[0],
-            input_ids.shape[1],
-            self.embeddings[0].embedding_dim,
-            device=input_ids.device
-        )
+        embedded = None
 
         for i, embedding_layer in enumerate(self.embeddings):
-            embedded += embedding_layer(input_ids[..., i])
+
+            indexes_in_range = range(i, input_ids.shape[1], self.num_embeddings)
+            res = embedding_layer(input_ids[..., indexes_in_range])
+            if embedded is None:
+                embedded = res
+            else:
+                embedded += res
 
         return embedded
+
 
 class T5ForResidualQuantization(T5PreTrainedModel):
     def __init__(self, config: T5Config, num_quantization: int):
@@ -33,7 +39,6 @@ class T5ForResidualQuantization(T5PreTrainedModel):
 
         # Modified shared embedding
         self.shared = EmbeddingSum(num_quantization, config.d_model)
-
 
         encoder_config = copy.deepcopy(config)
         encoder_config.is_decoder = False
@@ -54,7 +59,6 @@ class T5ForResidualQuantization(T5PreTrainedModel):
 
         # Initialize weights
         self.post_init()
-
 
     def forward(
             self,
