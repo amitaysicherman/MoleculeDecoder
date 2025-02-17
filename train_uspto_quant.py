@@ -96,7 +96,7 @@ def main():
     datasets = create_datasets(base_dir)
 
     config = T5Config(
-        vocab_size=quantization_codebook_size,
+        vocab_size=quantization_codebook_size+1, # Add 1 for padding token
         d_model=768,
         d_ff=2048,
         num_layers=6,

@@ -6,15 +6,24 @@ from typing import Optional, Tuple
 import copy
 
 
+
+def _shift_right(emb, pad_token):
+    return torch.cat(
+        [pad_token.expand(emb.size(0), -1, -1),
+         emb[:, :-1]], dim=1
+    )
+
+
 class EmbeddingSum(nn.Module):
-    def __init__(self, num_embeddings, embedding_dim):
+    def __init__(self, k, num_embeddings, embedding_dim):
         super().__init__()
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
+        self.k = k
 
         self.embeddings = nn.ModuleList([
-            nn.Embedding(num_embeddings+1, embedding_dim)
-            for _ in range(num_embeddings)
+            nn.Embedding(num_embeddings, embedding_dim)
+            for _ in range(k)
         ])
 
     def forward(self, input_ids):
@@ -22,7 +31,7 @@ class EmbeddingSum(nn.Module):
 
         for i, embedding_layer in enumerate(self.embeddings):
 
-            indexes_in_range = range(i, input_ids.shape[1], self.num_embeddings)
+            indexes_in_range = range(i, input_ids.shape[1], self.k)
             res = embedding_layer(input_ids[..., indexes_in_range])
             if embedded is None:
                 embedded = res
@@ -38,7 +47,11 @@ class T5ForResidualQuantization(T5PreTrainedModel):
         self.num_quantization = num_quantization
 
         # Modified shared embedding
-        self.shared = EmbeddingSum(num_quantization, config.d_model)
+        self.shared = EmbeddingSum(
+            k=num_quantization,
+            num_embeddings=config.vocab_size,
+            embedding_dim=config.d_model
+        )
 
         encoder_config = copy.deepcopy(config)
         encoder_config.is_decoder = False
@@ -86,8 +99,9 @@ class T5ForResidualQuantization(T5PreTrainedModel):
             inputs_embeds = self.shared(input_ids)
 
         # Handle decoder inputs embedding
-        if decoder_inputs_embeds is None and decoder_input_ids is not None:
-            decoder_inputs_embeds = self.shared(decoder_input_ids)
+        if decoder_inputs_embeds is None and labels is not None:
+            decoder_inputs_embeds = self.shared(labels)
+        decoder_inputs_embeds = _shift_right(decoder_inputs_embeds, self.vocab_size)
 
         # Encode if needed
         if encoder_outputs is None:
