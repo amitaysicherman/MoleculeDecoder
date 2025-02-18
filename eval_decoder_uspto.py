@@ -2,7 +2,7 @@ import torch
 from train_decoder import create_model
 import tqdm
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+from train_decoder import create_model
 decoder_model, tokenizer = create_model()
 decoder_model.load_state_dict(
     torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)

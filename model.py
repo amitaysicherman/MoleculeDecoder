@@ -5,8 +5,19 @@ from transformers import PreTrainedModel, PretrainedConfig, AutoModel
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch.nn import TransformerDecoder, TransformerDecoderLayer
 from transformers import T5Config
+from torch.nn import functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def _shift_right(input_ids, decoder_start_token_id, pad_token_id):
+    shifted_input_ids = input_ids.new_zeros(input_ids.shape)
+    shifted_input_ids[..., 1:] = input_ids[..., :-1].clone()
+    shifted_input_ids[..., 0] = decoder_start_token_id
+    if pad_token_id is None:
+        raise ValueError("self.model.config.pad_token_id has to be defined.")
+    shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
+    return shifted_input_ids
 
 
 class PositionalEncoding(nn.Module):
@@ -25,8 +36,6 @@ class PositionalEncoding(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.pe[:, :x.size(1)]
         return self.dropout(x)
-
-
 
 
 class VectorT5(PreTrainedModel):
@@ -117,7 +126,9 @@ class VectorT5(PreTrainedModel):
             src_mol_attention_mask,
             tgt_embeddings,
             tgt_mol_attention_mask,
-            return__seq=False
+            v2m,
+            output_tokens,
+            return_seq=False
     ):
         # Project embeddings and add positional encoding
         encoder_hidden_states = self.input_projection(src_embeddings)
@@ -152,16 +163,34 @@ class VectorT5(PreTrainedModel):
 
         sequence_output = self.output_projection(decoder_outputs)
 
-        # Calculate loss
-        loss_fct = nn.MSELoss(reduction='none')
-        position_losses = loss_fct(sequence_output, tgt_embeddings)
-        mask = tgt_mol_attention_mask.unsqueeze(-1).expand_as(position_losses)
-        position_losses = position_losses * mask
-        total_active_elements = mask.sum()
+        sequence_output = sequence_output[:, :1, :]
 
-        loss= position_losses.sum() / total_active_elements
-        if return__seq:
-            return loss, sequence_output
+        decoder_input_ids = _shift_right(output_tokens, v2m.config.decoder_start_token_id, v2m.config.pad_token_id)
+        decoder_output = v2m.decoder(encoder_hidden_states=sequence_output, input_ids=decoder_input_ids)
+        lm_logits = v2m.lm_head(decoder_output.last_hidden_state)
+        labels = output_tokens.clone()
+        labels[labels == v2m.config.pad_token_id] = -100
+
+        loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1), ignore_index=-100)
+
+        # # Calculate loss
+        # loss_fct = nn.MSELoss(reduction='none')
+        # position_losses = loss_fct(sequence_output, tgt_embeddings)
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+        #
+        # mask = tgt_mol_attention_mask.unsqueeze(-1).expand_as(position_losses)
+        # position_losses = position_losses * mask
+        # total_active_elements = mask.sum()
+        #
+        # loss= position_losses.sum() / total_active_elements
+        if return_seq:
+            return loss, lm_logits.argmax(-1)
 
 
 if __name__ == "__main__":
@@ -216,4 +245,3 @@ if __name__ == "__main__":
 
         loss.backward()
         optimizer.step()
-

@@ -6,12 +6,13 @@ from t5_quant_model import T5ForResidualQuantization
 from transformers import T5Config
 from typing import Dict, List
 import numpy as np
+import random
 
 quantization_codebook_size = 512  # Adjust based on your data
 
 
 class ResidualQuantizationDataset(Dataset):
-    def __init__(self, src_path: str, tgt_path: str, max_length: int = 5*64):
+    def __init__(self, src_path: str, tgt_path: str, max_length: int = 5 * 64, sample_size=None):
         """
         Args:
             src_path: Path to source tokens file
@@ -34,6 +35,11 @@ class ResidualQuantizationDataset(Dataset):
             ]
 
         assert len(self.src_data) == len(self.tgt_data), "Source and target files must have same number of lines"
+        if sample_size:
+            random.seed(42)
+            indices = random.sample(range(len(self.src_data)), sample_size)
+            self.src_data = [self.src_data[i] for i in indices]
+            self.tgt_data = [self.tgt_data[i] for i in indices]
 
     def __len__(self):
         return len(self.src_data)
@@ -53,10 +59,19 @@ class ResidualQuantizationDataset(Dataset):
         else:
             tgt_tokens = tgt_tokens[:self.max_length]
 
+        input_ids = torch.tensor(src_tokens, dtype=torch.long)
+        input_mask = torch.ones_like(input_ids)
+        input_mask[input_ids == quantization_codebook_size] = 0
+
+        labels = torch.tensor(tgt_tokens, dtype=torch.long)
+        label_mask = torch.ones_like(labels)
+        label_mask[labels == quantization_codebook_size] = 0
+
         return {
-            'input_ids': torch.tensor(src_tokens, dtype=torch.long),
-            'labels': torch.tensor(tgt_tokens, dtype=torch.long),
-            'attention_mask': torch.ones(len(src_tokens), dtype=torch.long)
+            'input_ids': input_ids,
+            'input_mask': input_mask,
+            'labels': labels,
+            'label_mask': label_mask,
         }
 
 
@@ -67,14 +82,15 @@ def create_datasets(base_dir: str):
     for split in ['train', 'valid', 'test']:
         src_path = os.path.join(base_dir, f'src-{split}.txt')
         tgt_path = os.path.join(base_dir, f'tgt-{split}.txt')
-        datasets[split] = ResidualQuantizationDataset(src_path, tgt_path)
+        sample_size = None if split == "train" else 1000
+        datasets[split] = ResidualQuantizationDataset(src_path, tgt_path, sample_size=sample_size)
 
     return datasets
 
 
 def compute_metrics(eval_pred):
     """Custom metrics computation"""
-    predictions, labels = eval_pred
+    predictions, (labels, _) = eval_pred
     predictions = np.argmax(predictions, axis=-1)
 
     # Mask out padding tokens
@@ -96,7 +112,7 @@ def main():
     datasets = create_datasets(base_dir)
 
     config = T5Config(
-        vocab_size=quantization_codebook_size+1, # Add 1 for padding token
+        vocab_size=quantization_codebook_size + 1,  # Add 1 for padding token
         d_model=768,
         d_ff=2048,
         num_layers=6,
@@ -111,14 +127,16 @@ def main():
     # Training arguments
     training_args = TrainingArguments(
         output_dir="./results",
-        num_train_epochs=3,
-        per_device_train_batch_size=1024,
-        per_device_eval_batch_size=1024,
+        num_train_epochs=100,
+        per_device_train_batch_size=32,
+        per_device_eval_batch_size=32,
         warmup_steps=500,
         logging_dir="./logs",
-        logging_steps=100,
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
+        logging_steps=1000,
+        evaluation_strategy="steps",
+        save_strategy="steps",
+        save_steps=5000,
+        eval_steps=5000,
         load_best_model_at_end=True,
         metric_for_best_model="accuracy",
         greater_is_better=True,
@@ -140,6 +158,8 @@ def main():
     )
 
     # Train model
+    trainer.evaluate()
+
     trainer.train()
 
     # Evaluate on test set
@@ -152,4 +172,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

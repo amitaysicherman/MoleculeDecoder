@@ -157,7 +157,8 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--q_cp", type=str, default="results_pubchem/residual_vq_lr_64_512_768_10000_0.001_100_best.pt")
+    parser.add_argument("--q_cp", type=str,
+                        default="")  # results_pubchem/residual_vq_lr_64_512_768_10000_0.001_100_best.pt")
     args = parser.parse_args()
 
     model, tokenizer = create_model(args.q_cp)

@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 import logging
 from transformers import AutoModel
+from model import VectorT5
 
 
 def get_mol_embeddings(molformer, input_ids, token_attention_mask):
@@ -44,7 +45,7 @@ def get_mol_embeddings(molformer, input_ids, token_attention_mask):
 class Trainer:
     def __init__(
             self,
-            model,
+            model: VectorT5,
             train_dataset,
             val_dataset,
             batch_size=32,
@@ -100,6 +101,12 @@ class Trainer:
             'num_epochs': num_epochs,
             'lr': lr
         })
+        from train_decoder import create_model
+        decoder_model, tokenizer = create_model()
+        decoder_model.load_state_dict(
+            torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')),
+            strict=True)
+        self.v2m = decoder_model.to(device).eval()
 
     def setup_logging(self):
         """Setup logging configuration"""
@@ -143,7 +150,9 @@ class Trainer:
                     src_embeddings=intput_embeddings,
                     tgt_embeddings=output_embeddings,
                     src_mol_attention_mask=batch['src_mol_attention_mask'],
-                    tgt_mol_attention_mask=batch['tgt_mol_attention_mask']
+                    tgt_mol_attention_mask=batch['tgt_mol_attention_mask'],
+                    v2m=self.v2m,
+                    output_tokens=batch['tgt_input_ids'],
                 )
 
                 loss.backward()
@@ -179,14 +188,14 @@ class Trainer:
                     batch['tgt_input_ids'],
                     batch['tgt_token_attention_mask']
                 )
-                loss= self.model(
+                loss = self.model(
                     src_embeddings=intput_embeddings,
                     tgt_embeddings=output_embeddings,
                     src_mol_attention_mask=batch['src_mol_attention_mask'],
-                    tgt_mol_attention_mask=batch['tgt_mol_attention_mask']
+                    tgt_mol_attention_mask=batch['tgt_mol_attention_mask'],
+                    v2m=self.v2m,
+                    output_tokens=batch['tgt_input_ids'],
                 )
-
-
 
                 total_loss += loss.item()
 
