@@ -107,6 +107,8 @@ class Trainer:
             torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')),
             strict=True)
         self.v2m = decoder_model.to(device).eval()
+        for param in self.v2m.parameters():
+            param.requires_grad = False
 
     def setup_logging(self):
         """Setup logging configuration"""

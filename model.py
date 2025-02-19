@@ -166,9 +166,10 @@ class VectorT5(PreTrainedModel):
         sequence_output = sequence_output[:, :1, :]
 
         decoder_input_ids = _shift_right(output_tokens, v2m.config.decoder_start_token_id, v2m.config.pad_token_id)
+        decoder_input_ids = decoder_input_ids[:, 0, :]
         decoder_output = v2m.decoder(encoder_hidden_states=sequence_output, input_ids=decoder_input_ids)
         lm_logits = v2m.lm_head(decoder_output.last_hidden_state)
-        labels = output_tokens.clone()
+        labels = output_tokens[:, 0, :].clone()
         labels[labels == v2m.config.pad_token_id] = -100
 
         loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1), ignore_index=-100)
@@ -191,6 +192,7 @@ class VectorT5(PreTrainedModel):
         # loss= position_losses.sum() / total_active_elements
         if return_seq:
             return loss, lm_logits.argmax(-1)
+        return loss
 
 
 if __name__ == "__main__":
