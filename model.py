@@ -164,6 +164,8 @@ class VectorT5(PreTrainedModel):
         sequence_output = self.output_projection(decoder_outputs)
 
         sequence_output = sequence_output[:, :1, :]
+        if return_seq:
+            return sequence_output
 
         decoder_input_ids = _shift_right(output_tokens, v2m.config.decoder_start_token_id, v2m.config.pad_token_id)
         decoder_input_ids = decoder_input_ids[:, 0, :]
@@ -190,8 +192,6 @@ class VectorT5(PreTrainedModel):
         # total_active_elements = mask.sum()
         #
         # loss= position_losses.sum() / total_active_elements
-        if return_seq:
-            return loss, lm_logits.argmax(-1)
         return loss
 
 
