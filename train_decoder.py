@@ -5,6 +5,8 @@ from torch.utils.data import Dataset, random_split
 from transformers import Trainer, TrainingArguments
 import torch.nn as nn
 from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer, PreTrainedModel
+from transformers.models.t5.modeling_t5 import T5Stack
+
 from transformers.modeling_outputs import Seq2SeqLMOutput
 from torch.nn import functional as F
 from vector_quantize_pytorch import ResidualVQ
@@ -14,8 +16,6 @@ def _shift_right(input_ids, decoder_start_token_id, pad_token_id):
     shifted_input_ids = input_ids.new_zeros(input_ids.shape)
     shifted_input_ids[..., 1:] = input_ids[..., :-1].clone()
     shifted_input_ids[..., 0] = decoder_start_token_id
-    if pad_token_id is None:
-        raise ValueError("self.model.config.pad_token_id has to be defined.")
     shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
     return shifted_input_ids
 
@@ -44,71 +44,66 @@ class SMILESDataset(Dataset):
         return tokens
 
 
-def compute_metrics(eval_pred):
+def compute_metrics(eval_pred, debug=False):
     """
     Compute metrics for evaluation
     """
     predictions, labels = eval_pred
+
     # Get argmax of predictions
     predictions = np.argmax(predictions, axis=-1)
+    if debug:
+        print()
+        print(predictions[0].tolist())
+        print(labels[0].tolist())
     mask = labels != -100
-
     total_tokens = mask.sum()
     correct_tokens = ((predictions == labels) & mask).sum()
     token_accuracy = correct_tokens / total_tokens
+    if debug:
+        print(f"Token accuracy: ({correct_tokens} / {total_tokens}) = {token_accuracy}")
+    correct_or_pad = (predictions == labels) | (~mask)
+    correct_samples = correct_or_pad.all(axis=-1).sum()
+    total_samples = len(labels)
+    sample_accuracy = correct_samples / total_samples
 
     return {
         "token_accuracy": token_accuracy,
+        "sample_accuracy": sample_accuracy,
     }
 
 
 class MolFormerT5Decoder(PreTrainedModel):
-    def __init__(self, config, q_cp=""):
+    def __init__(self, config):
         super().__init__(config)
         # Load and freeze MolFormer
-        self.molformer = AutoModel.from_pretrained(
-            "ibm/MoLFormer-XL-both-10pct",
-            trust_remote_code=True,
-            deterministic_eval=True
-        )
         self.config = config
-        for param in self.molformer.parameters():
+        self.embedder = AutoModel.from_pretrained(
+            "ibm/MoLFormer-XL-both-10pct",
+            deterministic_eval=True,
+            trust_remote_code=True
+        ).eval()
+        for param in self.embedder.parameters():
             param.requires_grad = False
-        # Simple projection if needed
-        if self.molformer.config.hidden_size != config.d_model:
-            self.proj = nn.Linear(self.molformer.config.hidden_size, config.d_model)
+
+        if self.embedder.config.hidden_size != config.d_model:
+            self.proj = nn.Linear(self.embedder.config.hidden_size, config.d_model)
         else:
             self.proj = nn.Identity()
         # Initialize T5 decoder
-        T5 = T5ForConditionalGeneration(config)
-        self.decoder = T5.get_decoder()
-        self.lm_head = T5.lm_head
-        if q_cp:
-            _, _, _, num_quantizers, codebook_size, input_dim, _, _, _, _ = q_cp.split("/")[-1].split("_")
-            self.q_model = ResidualVQ(
-                dim=int(input_dim),
-                num_quantizers=int(num_quantizers),
-                codebook_size=int(codebook_size),
-                ema_update=False,  # Use gradient descent instead of EMA
-            )
-            self.q_model.load_state_dict(torch.load(q_cp, map_location=torch.device('cpu')))
-            for param in self.q_model.parameters():
-                param.requires_grad = False
-            self.q_model.eval()
-        else:
-            self.q_model = None
+        # import T5 Stack
+        embed_tokens = nn.Embedding(config.vocab_size, config.d_model)
+
+        self.decoder = T5Stack(config, embed_tokens)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
     def forward(self, input_ids, attention_mask=None, labels=None):
-        # Get MolFormer embedding
-        mol_outputs = self.molformer(input_ids, attention_mask=attention_mask)
+        mol_outputs = self.embedder(input_ids, attention_mask=attention_mask)
         encoder_outputs = self.proj(mol_outputs.pooler_output)
-        if self.q_model:
-            encoder_outputs, *_ = self.q_model(encoder_outputs)
         encoder_outputs = encoder_outputs.unsqueeze(1)
         decoder_input_ids = _shift_right(input_ids, self.config.decoder_start_token_id, self.config.pad_token_id)
         decoder_output = self.decoder(encoder_hidden_states=encoder_outputs, input_ids=decoder_input_ids)
         lm_logits = self.lm_head(decoder_output.last_hidden_state)
-
         loss = F.cross_entropy(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1), ignore_index=-100)
         return Seq2SeqLMOutput(
             loss=loss,
@@ -116,39 +111,50 @@ class MolFormerT5Decoder(PreTrainedModel):
         )
 
 
-def create_model(q_cp=""):
+def create_model(debug=False):
     # Initialize tokenizer
     tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
     # Initialize config
-    config = T5Config(
-        vocab_size=len(tokenizer),
-        d_model=768,
-        d_ff=2048,
-        num_layers=6,
-        num_decoder_layers=6,
-        is_encoder_decoder=True,
-        is_decoder=True,
-        num_heads=8,
-        decoder_start_token_id=tokenizer.pad_token_id,
-    )
-    model = MolFormerT5Decoder(config, q_cp)
-    # print number of parameters
-    print(f"Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
-    # number of non trainable parameters
-    print(f"Number of non-trainable parameters: {sum(p.numel() for p in model.parameters() if not p.requires_grad):,}")
-    print(model)
 
-    if q_cp:
-        print(f"Loading model to cuntinue training")
-        miss = model.load_state_dict(
-            torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')),
-            strict=False)
-        # if start with q_model it's ok , if not it's not ok
-        for key in miss.missing_keys:
-            if "q_model" not in key:
-                print(f"Missing key: {key}")
-        for key in miss.unexpected_keys:
-            print(f"Unexpected key: {key}")
+    if debug:
+        config = T5Config(
+            vocab_size=len(tokenizer),
+            d_model=256,
+            d_ff=512,
+            num_layers=4,
+            is_encoder_decoder=False,
+            is_decoder=True,
+            num_heads=4,
+            decoder_start_token_id=tokenizer.pad_token_id,
+            bos_token_id=tokenizer.bos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+        )
+    else:
+        config = T5Config(
+            vocab_size=len(tokenizer),
+            d_model=768,
+            d_ff=2048,
+            is_encoder_decoder=False,
+            is_decoder=True,
+            num_layers=6,
+            num_decoder_layers=6,
+            num_heads=8,
+            decoder_start_token_id=tokenizer.pad_token_id,
+            bos_token_id=tokenizer.bos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+
+        )
+    if debug:
+        print(config)
+    model = MolFormerT5Decoder(config)
+    # print number of parameters
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
+    total_params = trainable_params + non_trainable_params
+    print(
+        f"Total parameters: {total_params:,},(trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
     return model, tokenizer
 
 
@@ -157,35 +163,44 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--q_cp", type=str,
-                        default="")  # results_pubchem/residual_vq_lr_64_512_768_10000_0.001_100_best.pt")
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
-    model, tokenizer = create_model(args.q_cp)
+    model, tokenizer = create_model(args.debug)
 
     dataset = SMILESDataset(tokenizer)
-    train_size = len(dataset) - 100_000
-    eval_size = 100_000
-    train_dataset, eval_dataset = random_split(
-        dataset, [train_size, eval_size]
-    )
-    suf = "_pubchem"
-    if args.q_cp:
-        suf += "_quantized"
+    DEBUG = args.debug
+    if DEBUG:
+        train_size = 1
+        eval_size = 1
+        dataset.smiles = dataset.smiles[:train_size + eval_size]
+        train_dataset, eval_dataset = random_split(
+            dataset, [train_size, eval_size]
+        )
+        eval_dataset = train_dataset
+    else:
+        train_size = len(dataset) - 100_000
+        eval_size = 100_000
+        train_dataset, eval_dataset = random_split(
+            dataset, [train_size, eval_size]
+        )
+
+    suf = "_decoder"
     training_args = TrainingArguments(
         output_dir=f"./results{suf}",
-        num_train_epochs=10 if not args.q_cp else 5,
+        num_train_epochs=10 if not DEBUG else 10000,
         per_device_train_batch_size=1024,
         per_device_eval_batch_size=1024,
-        learning_rate=1e-4,  # Constant learning rate
+        learning_rate=1e-4 if not DEBUG else 1e-5,
         logging_dir=f'./logs{suf}',
-        logging_steps=1_000 if not args.q_cp else 500,
-        save_steps=5_000 if not args.q_cp else 500,
+        logging_steps=1_000 if not DEBUG else 10,
+        save_steps=5_000 if not DEBUG else 50000000,
         eval_accumulation_steps=2,
-        eval_steps=5_000 if not args.q_cp else 500,
+        eval_steps=5_000 if not DEBUG else 10,
         evaluation_strategy="steps",
-        report_to=["tensorboard"],
-        lr_scheduler_type="constant",  # Use constant learning rate
+        report_to=["tensorboard"] if not DEBUG else [],
+        lr_scheduler_type="linear",
+        warmup_steps=5_000 if not DEBUG else 500,
         load_best_model_at_end=True,
         metric_for_best_model="token_accuracy",
         save_safetensors=False,
@@ -198,9 +213,9 @@ if __name__ == "__main__":
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        compute_metrics=compute_metrics,
+        compute_metrics=lambda x: compute_metrics(x, debug=DEBUG),
     )
-    trainer.evaluate()
+    scores = trainer.evaluate()
+    print(scores)
 
     trainer.train(resume_from_checkpoint=False)
-    model.save_pretrained("path/to/save/model")
