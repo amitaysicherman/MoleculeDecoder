@@ -30,10 +30,12 @@ def parse_args():
                         help='Random seed')
     parser.add_argument('--debug', action='store_true',
                         help='Run in debug mode')
+    parser.add_argument('--size', type=str, default="small",
+                        help='Size of the model (small or large)')
     return parser.parse_args()
 
 
-def get_model(debug=False):
+def get_model(debug=False, size="large"):
     if debug:
         config = T5Config(
             d_model=64,
@@ -46,15 +48,27 @@ def get_model(debug=False):
             dropout=0.0
         )
     else:
-        config = T5Config(
-            d_model=768,
-            d_ff=2048,
-            num_layers=6,
-            num_heads=8,
-            input_dim=768,
-            output_dim=768,
-            dropout=0.1
-        )
+        if size == "small":
+            config = T5Config(
+                d_model=256,
+                d_kv=32,
+                d_ff=512,
+                num_layers=4,
+                num_heads=4,
+                input_dim=768,
+                output_dim=768,
+                dropout=0.1
+            )
+        else:
+            config = T5Config(
+                d_model=768,
+                d_ff=2048,
+                num_layers=6,
+                num_heads=8,
+                input_dim=768,
+                output_dim=768,
+                dropout=0.1
+            )
     model = VectorT5(config)
     return model
 

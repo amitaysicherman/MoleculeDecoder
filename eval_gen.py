@@ -8,8 +8,8 @@ from transformers import AutoModel
 from trainer import get_mol_embeddings
 from train_decoder import _shift_right
 from tqdm import tqdm
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # def generate(
 #         model,
@@ -135,13 +135,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #     return torch.stack(output_sequences).to(device)
 #
 
+
 decoder_model, tokenizer = create_model()
 decoder_model.load_state_dict(
     torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
 decoder_model = decoder_model.to(device).eval()
 concept_model = get_concept_model()
 concept_model.load_state_dict(
-    torch.load("outputs/20250206_214325/best_model.pt", map_location=torch.device('cpu'))['model_state_dict'],
+    torch.load("outputs/20250219_133220/best_model.pt", map_location=torch.device('cpu'))['model_state_dict'],
     strict=True)
 concept_model = concept_model.to(device).eval()
 
@@ -156,8 +157,44 @@ for param in molformer.parameters():
 test_dataset = ReactionMolsDataset(base_dir="USPTO", split="valid", debug=False)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-is_correct = []
-is_correct2 = []
+
+class Metrics:
+    def __init__(self):
+        self.perfect_match_accuracy = 0
+        self.token_accuracy = 0
+        self.gt_perfect_match_accuracy = 0
+        self.gt_token_accuracy = 0
+        self.total_samples = 0
+        self.total_tokens = 0
+
+    def update(self, labels, predictions, gt_predictions):
+        labels = labels.cpu().numpy().flatten()
+        predictions = predictions.detach().cpu().numpy().flatten()
+        gt_predictions = gt_predictions.detach().cpu().numpy().flatten()
+        is_pad = labels == -100
+        predictions = predictions[~is_pad]
+        gt_predictions = gt_predictions[~is_pad]
+        labels = labels[~is_pad]
+        self.token_accuracy += (predictions == labels).sum()
+        self.gt_token_accuracy += (gt_predictions == labels).sum()
+        labels_smiles = tokenizer.decode(labels, skip_special_tokens=True)
+        predictions_smiles = tokenizer.decode(predictions, skip_special_tokens=True)
+        gt_predictions = tokenizer.decode(gt_predictions, skip_special_tokens=True)
+        self.perfect_match_accuracy += labels_smiles == predictions_smiles
+        self.gt_perfect_match_accuracy += labels_smiles == gt_predictions
+        self.total_samples += 1
+        self.total_tokens += len(labels)
+
+    def to_dict(self):
+        return {
+            "perfect_match_accuracy": self.perfect_match_accuracy / self.total_samples,
+            "token_accuracy": self.token_accuracy / self.total_tokens,
+            "gt_perfect_match_accuracy": self.gt_perfect_match_accuracy / self.total_samples,
+            "gt_token_accuracy": self.gt_token_accuracy / self.total_tokens
+        }
+
+
+scores = Metrics()
 pbar = tqdm(test_loader)
 for batch in pbar:
     batch = {k: v.to(device) for k, v in batch.items()}
@@ -171,7 +208,7 @@ for batch in pbar:
         batch['tgt_input_ids'],
         batch['tgt_token_attention_mask']
     )
-    loss, outputs = concept_model(
+    outputs = concept_model(
         src_embeddings=intput_embeddings,
         tgt_embeddings=output_embeddings,
         src_mol_attention_mask=batch['src_mol_attention_mask'],
@@ -186,21 +223,14 @@ for batch in pbar:
     encoder_outputs = decoder_model.proj(mol_outputs).unsqueeze(1)
     # Run through decoder
     input_ids = batch['tgt_input_ids'][0][:1]
-    decoder_input_ids = _shift_right(input_ids, decoder_model.config.decoder_start_token_id,
-                                     decoder_model.config.pad_token_id)
+    decoder_input_ids = _shift_right(input_ids, 2, 2)
     decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs, input_ids=decoder_input_ids)
-    lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
-    generated_ids = lm_logits.argmax(dim=-1)
-    generated_smiles = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'][0][0:1], skip_special_tokens=True)[0]
-    is_correct.append(real_smiles == generated_smiles)
+    pred_lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state).argmax(dim=-1)
 
+    decoder_output = decoder_model.decoder(encoder_hidden_states=output_embeddings[:, :1], input_ids=decoder_input_ids)
+    gt_lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state).argmax(dim=-1)
+    scores.update(batch['tgt_input_ids'][:, :1], pred_lm_logits, gt_lm_logits)
 
-    decoder_output = decoder_model.decoder(encoder_hidden_states=output_embeddings[0][:1], input_ids=decoder_input_ids)
-    lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state)
-    generated_ids = lm_logits.argmax(dim=-1)
-    generated_smiles = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-    real_smiles = tokenizer.batch_decode(batch['tgt_input_ids'][0][0:1], skip_special_tokens=True)[0]
-    is_correct2.append(real_smiles == generated_smiles)
+    pbar.set_postfix(scores.to_dict())
 
-    pbar.set_postfix({"correct": sum(is_correct) / len(is_correct), "gt_correct": sum(is_correct2) / len(is_correct2)})
+# 2025-02-19 13:32:22,773 - PyTorch version 2.5.1 available.
