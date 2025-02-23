@@ -89,7 +89,7 @@ def main():
     val_dataset = ReactionMolsDataset(base_dir=args.data_dir, split="valid", debug=args.debug)
 
     # Initialize model
-    model = get_model(debug=args.debug)
+    model = get_model(debug=args.debug, size=args.size)
 
     # Print model parameters
     total_params = sum(p.numel() for p in model.parameters())
