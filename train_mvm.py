@@ -20,7 +20,7 @@ ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096}
 
 def size_to_config(size):
     return T5Config(
-        vocab_size=32128,
+        vocab_size=1,#not used
         d_model=768,
         d_ff=ff_dim[size],
         num_layers=n_layers[size],
@@ -232,13 +232,14 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m"):
     total_params = trainable_params + non_trainable_params
     print(
         f"MODEL:MVM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
+    output_suf = f"{size}_{lr}"
     train_args = TrainingArguments(
-        output_dir="results_mvm",
+        output_dir=f"results_mvm/{output_suf}",
         num_train_epochs=num_epochs if not debug else 10000,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         eval_accumulation_steps=10,
-        logging_dir="logs_mvm",
+        logging_dir=f"logs_mvm/{output_suf}",
         logging_steps=100,
         save_steps=500,
         evaluation_strategy="steps",
@@ -279,4 +280,3 @@ if __name__ == "__main__":
     parser.add_argument("--size", type=str, default="s", choices=['xs', "s", "m", "l", "xl"])
     args = parser.parse_args()
     main(args.debug, args.batch_size, args.num_epochs, args.lr, args.size)
-
