@@ -211,6 +211,7 @@ def main(debug):
     if debug:
         config = T5Config(
             d_model=768,
+            d_ff=1024,
             num_layers=1,
             is_encoder_decoder=True,
             is_decoder=True,
@@ -219,10 +220,11 @@ def main(debug):
     else:
         config = T5Config(
             d_model=768,
-            num_layers=6,
+            d_ff=1024,
+            num_layers=4,
             is_encoder_decoder=True,
             is_decoder=True,
-            num_heads=8,
+            num_heads=4,
         )
     model = MVM(config)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
