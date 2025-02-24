@@ -13,4 +13,4 @@ config_index=$(($SLURM_ARRAY_TASK_ID))
 size=${sizes_list[$config_index]}
 learning_rate=${lr_list[$config_index]}
 echo "size: $size, learning_rate: $learning_rate, config_index: $config_index"
-python train_mvm.py --size $size --learning_rate $learning_rate
+python train_mvm.py --size $size --lr $learning_rate
