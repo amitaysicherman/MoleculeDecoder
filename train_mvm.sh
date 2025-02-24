@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:L40:1
 #SBATCH --array=0-14
 
-sizes_list=("xs" "xs" "xs" "s" "s" "s" "m" "m" "m" "l" "l" "l" "xl" "xl" "xl")
+sizes_list=("s" "s" "s" "m" "m" "m" "l" "l" "l" "xs" "xs" "xs" "xl" "xl" "xl")
 lr_list=(1e-3 1e-4 1e-5 1e-3 1e-4 1e-5 1e-3 1e-4 1e-5 1e-3 1e-4 1e-5 1e-3 1e-4 1e-5)
 
 config_index=$(($SLURM_ARRAY_TASK_ID))
