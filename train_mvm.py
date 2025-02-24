@@ -227,6 +227,8 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m"):
         size = "xs"
     config = size_to_config(size)
     model = MVM(config)
+    if debug:
+        print(model)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
     total_params = trainable_params + non_trainable_params
