@@ -4,12 +4,11 @@ import torch
 from torch.utils.data import Dataset, random_split
 from transformers import Trainer, TrainingArguments
 import torch.nn as nn
-from transformers import T5ForConditionalGeneration, AutoModel, T5Config, AutoTokenizer, PreTrainedModel
+from transformers import AutoModel, T5Config, AutoTokenizer, PreTrainedModel
 from transformers.models.t5.modeling_t5 import T5Stack
 
 from transformers.modeling_outputs import Seq2SeqLMOutput
 from torch.nn import functional as F
-from vector_quantize_pytorch import ResidualVQ
 
 
 def _shift_right(input_ids, decoder_start_token_id, pad_token_id):
@@ -93,14 +92,15 @@ class MolFormerT5Decoder(PreTrainedModel):
         # Initialize T5 decoder
         # import T5 Stack
         embed_tokens = nn.Embedding(config.vocab_size, config.d_model)
-
         self.decoder = T5Stack(config, embed_tokens)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
-    def forward(self, input_ids, attention_mask=None, labels=None):
-        mol_outputs = self.embedder(input_ids, attention_mask=attention_mask)
-        encoder_outputs = self.proj(mol_outputs.pooler_output)
-        encoder_outputs = encoder_outputs.unsqueeze(1)
+    def forward(self, input_ids=None, attention_mask=None, labels=None, encoder_outputs=None):
+        if encoder_outputs is None:
+            mol_outputs = self.embedder(input_ids, attention_mask=attention_mask)
+            encoder_outputs = self.proj(mol_outputs.pooler_output)
+        if encoder_outputs.dim() == 2:
+            encoder_outputs = encoder_outputs.unsqueeze(1)
         decoder_input_ids = _shift_right(input_ids, self.config.decoder_start_token_id, self.config.pad_token_id)
         decoder_output = self.decoder(encoder_hidden_states=encoder_outputs, input_ids=decoder_input_ids)
         lm_logits = self.lm_head(decoder_output.last_hidden_state)
@@ -171,16 +171,17 @@ if __name__ == "__main__":
     dataset = SMILESDataset(tokenizer)
     DEBUG = args.debug
     if DEBUG:
-        train_size = 1
-        eval_size = 1
+        train_size = 2
+        eval_size = 2
         dataset.smiles = dataset.smiles[:train_size + eval_size]
         train_dataset, eval_dataset = random_split(
             dataset, [train_size, eval_size]
         )
         eval_dataset = train_dataset
     else:
-        train_size = len(dataset) - 100_000
-        eval_size = 100_000
+        eval_len = 10_000
+        train_size = len(dataset) - eval_len
+        eval_size = eval_len
         train_dataset, eval_dataset = random_split(
             dataset, [train_size, eval_size]
         )

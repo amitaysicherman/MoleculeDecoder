@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 from train_decoder import create_model
 from train_script import get_model as get_concept_model
 from dataset import ReactionMolsDataset
@@ -10,6 +9,7 @@ from train_decoder import _shift_right
 from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# import torch.nn.functional as F
 
 # def generate(
 #         model,
@@ -134,26 +134,33 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #     # Stack all sequences and ensure they're on the right device
 #     return torch.stack(output_sequences).to(device)
 #
+def load_models():
+    decoder_model, tokenizer = create_model()
+    state_dict = torch.load("results_decoder/checkpoint-35000/pytorch_model.bin", map_location=torch.device('cpu'))
+    decoder_model.load_state_dict(state_dict, strict=True)
+    decoder_model = decoder_model.to(device).eval()
+
+    concept_model = get_concept_model()
+    concept_model.load_state_dict(
+        torch.load("outputs/20250219_133220/best_model.pt", map_location=torch.device('cpu'))['model_state_dict'],
+        strict=True)
+    concept_model = concept_model.to(device).eval()
+
+    molformer = AutoModel.from_pretrained(
+        "ibm/MoLFormer-XL-both-10pct",
+        deterministic_eval=True,
+        trust_remote_code=True
+    ).to(device).eval()
+    for param in molformer.parameters():
+        param.requires_grad = False
+
+    return decoder_model, concept_model, molformer, tokenizer
 
 
-decoder_model, tokenizer = create_model()
-decoder_model.load_state_dict(
-    torch.load("results_pubchem/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu')), strict=True)
-decoder_model = decoder_model.to(device).eval()
-concept_model = get_concept_model()
-concept_model.load_state_dict(
-    torch.load("outputs/20250219_133220/best_model.pt", map_location=torch.device('cpu'))['model_state_dict'],
-    strict=True)
-concept_model = concept_model.to(device).eval()
 
-molformer = AutoModel.from_pretrained(
-    "ibm/MoLFormer-XL-both-10pct",
-    deterministic_eval=True,
-    trust_remote_code=True
-).to(device).eval()
-for param in molformer.parameters():
-    param.requires_grad = False
 
+
+decoder_model, concept_model, molformer, tokenizer = load_models()
 test_dataset = ReactionMolsDataset(base_dir="USPTO", split="valid", debug=False)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
@@ -208,6 +215,10 @@ for batch in pbar:
         batch['tgt_input_ids'],
         batch['tgt_token_attention_mask']
     )
+    if batch['src_input_ids'][0,0,-1] != tokenizer.pad_token_id:
+        continue
+    if batch['tgt_input_ids'][0,0,-1] != tokenizer.pad_token_id:
+        continue
     outputs = concept_model(
         src_embeddings=intput_embeddings,
         tgt_embeddings=output_embeddings,
@@ -223,13 +234,23 @@ for batch in pbar:
     encoder_outputs = decoder_model.proj(mol_outputs).unsqueeze(1)
     # Run through decoder
     input_ids = batch['tgt_input_ids'][0][:1]
-    decoder_input_ids = _shift_right(input_ids, 2, 2)
+    decoder_input_ids = _shift_right(input_ids, decoder_start_token_id=tokenizer.pad_token_id, pad_token_id=tokenizer.pad_token_id)
     decoder_output = decoder_model.decoder(encoder_hidden_states=encoder_outputs, input_ids=decoder_input_ids)
     pred_lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state).argmax(dim=-1)
 
-    decoder_output = decoder_model.decoder(encoder_hidden_states=output_embeddings[:, :1], input_ids=decoder_input_ids)
-    gt_lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state).argmax(dim=-1)
-    scores.update(batch['tgt_input_ids'][:, :1], pred_lm_logits, gt_lm_logits)
+    # decoder_output = decoder_model.decoder(encoder_hidden_states=output_embeddings[:, :1], input_ids=decoder_input_ids)
+    # gt_lm_logits = decoder_model.lm_head(decoder_output.last_hidden_state).argmax(dim=-1)
+
+    attention_mask = batch['tgt_token_attention_mask'][0][:1]
+    labels = batch['tgt_input_ids'][0][:1].clone()
+    labels[attention_mask == 0] = -100
+
+    gt_lm_logits=decoder_model(input_ids, attention_mask, labels).logits.argmax(dim=-1)
+
+    labels = batch['tgt_input_ids'][0][:1].clone()
+    labels[attention_mask == 0] = -100
+
+    scores.update(labels, pred_lm_logits, gt_lm_logits)
 
     pbar.set_postfix(scores.to_dict())
 
