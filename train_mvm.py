@@ -20,7 +20,7 @@ ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096}
 
 def size_to_config(size):
     return T5Config(
-        vocab_size=1,#not used
+        vocab_size=1,  # not used
         d_model=768,
         d_ff=ff_dim[size],
         num_layers=n_layers[size],
@@ -84,10 +84,10 @@ class ReactionMolsDataset(Dataset):
 
 
 class MVM(PreTrainedModel):
-    def __init__(self, config):
+    def __init__(self, config, alpha=0.5):
         super().__init__(config)
         self.config = config
-        self.alpha = 0.5
+        self.alpha = alpha
         self.encoder = AutoModel.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
             deterministic_eval=True,
@@ -222,13 +222,13 @@ def compute_metrics(eval_pred, debug=False):
     }
 
 
-def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m"):
+def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
     train_dataset = ReactionMolsDataset(split="train", debug=debug)
     val_dataset = ReactionMolsDataset(split="valid", debug=debug)
     if debug:
         size = "xs"
     config = size_to_config(size)
-    model = MVM(config)
+    model = MVM(config, alpha)
     if debug:
         print(model)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -236,7 +236,8 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m"):
     total_params = trainable_params + non_trainable_params
     print(
         f"MODEL:MVM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
-    output_suf = f"{size}_{lr}"
+    output_suf = f"{size}_{lr}_{alpha}"
+    os.makedirs(f"results_mvm/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
         output_dir=f"results_mvm/{output_suf}",
         num_train_epochs=num_epochs if not debug else 10000,
@@ -266,9 +267,10 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m"):
         eval_dataset=val_dataset,
         compute_metrics=lambda x: compute_metrics(x, debug=debug)
     )
-    score = trainer.evaluate()
-    print(score)
-    trainer.train()
+    # score = trainer.evaluate()
+    # print(score)
+    resume_from_checkpoint = os.path.exists(f"results_mvm/{output_suf}/checkpoint-500")
+    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
 
 # run main to test dataset
@@ -279,8 +281,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--batch_size", type=int, default=1024)
-    parser.add_argument("--num_epochs", type=int, default=10)
+    parser.add_argument("--num_epochs", type=int, default=5)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--size", type=str, default="s", choices=['xs', "s", "m", "l", "xl"])
+    parser.add_argument("--alpha", type=float, default=0.5)
     args = parser.parse_args()
-    main(args.debug, args.batch_size, args.num_epochs, args.lr, args.size)
+    main(args.debug, args.batch_size, args.num_epochs, args.lr, args.size, args.alpha)
