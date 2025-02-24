@@ -197,6 +197,8 @@ def compute_metrics(eval_pred, debug=False):
     predictions, labels_ = eval_pred
     tgt_input_ids, tgt_token_attention_mask, tgt_mol_attention_mask = labels_
     labels = tgt_input_ids[:, 0]
+    labels_mask = tgt_token_attention_mask[:, 0]
+    labels[labels_mask == 0] = -100
     # Get argmax of predictions
     predictions = np.argmax(predictions, axis=-1)
     if debug:
