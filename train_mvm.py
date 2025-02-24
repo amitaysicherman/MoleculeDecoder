@@ -13,6 +13,21 @@ import numpy as np
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12}
+n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12}
+ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096}
+
+
+def size_to_config(size):
+    return T5Config(
+        vocab_size=32128,
+        d_model=768,
+        d_ff=ff_dim[size],
+        num_layers=n_layers[size],
+        num_decoder_layers=n_layers[size],
+        num_heads=n_heads[size]
+    )
+
 
 def load_smiles_file(file_name):
     with open(file_name) as f:
@@ -205,27 +220,12 @@ def compute_metrics(eval_pred, debug=False):
     }
 
 
-def main(debug):
+def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m"):
     train_dataset = ReactionMolsDataset(split="train", debug=debug)
     val_dataset = ReactionMolsDataset(split="valid", debug=debug)
     if debug:
-        config = T5Config(
-            d_model=768,
-            d_ff=1024,
-            num_layers=1,
-            is_encoder_decoder=True,
-            is_decoder=True,
-            num_heads=1,
-        )
-    else:
-        config = T5Config(
-            d_model=768,
-            d_ff=1024,
-            num_layers=4,
-            is_encoder_decoder=True,
-            is_decoder=True,
-            num_heads=4,
-        )
+        size = "xs"
+    config = size_to_config(size)
     model = MVM(config)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
@@ -234,9 +234,9 @@ def main(debug):
         f"MODEL:MVM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
     train_args = TrainingArguments(
         output_dir="results_mvm",
-        num_train_epochs=10 if not debug else 10000,
-        per_device_train_batch_size=1024,
-        per_device_eval_batch_size=1024,
+        num_train_epochs=num_epochs if not debug else 10000,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
         eval_accumulation_steps=10,
         logging_dir="logs_mvm",
         logging_steps=100,
@@ -249,7 +249,7 @@ def main(debug):
         greater_is_better=False,
         gradient_accumulation_steps=1,
         report_to="none" if debug else "tensorboard",
-        learning_rate=1e-4,
+        learning_rate=lr,
         lr_scheduler_type='constant',
         label_names=['tgt_input_ids', 'tgt_token_attention_mask', 'tgt_mol_attention_mask'],
         seed=42
@@ -273,7 +273,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--batch_size", type=int, default=1024)
+    parser.add_argument("--num_epochs", type=int, default=10)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--size", type=str, default="s", choices=['xs', "s", "m", "l", "xl"])
     args = parser.parse_args()
-    debug = args.debug
+    main(args.debug, args.batch_size, args.num_epochs, args.lr, args.size)
 
-    main(debug)
