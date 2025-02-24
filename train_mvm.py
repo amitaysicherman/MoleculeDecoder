@@ -29,8 +29,8 @@ class ReactionMolsDataset(Dataset):
         self.src, self.tgt = zip(
             *[(s, t) for s, t in zip(self.src, self.tgt) if len(s) <= self.max_len and len(t) <= self.max_len])
         if debug:
-            self.src = self.src[:1]
-            self.tgt = self.tgt[:1]
+            self.src = self.src[:2]
+            self.tgt = self.tgt[:2]
         self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
         self.empty = {"input_ids": torch.tensor([self.tokenizer.pad_token_id] * 75),
                       "attention_mask": torch.tensor([0] * 75)}
@@ -128,9 +128,11 @@ class MVM(PreTrainedModel):
 
         embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
         final_emb = self.pad_embedding.expand(flat_mol_attention_mask.size(0), -1).clone()
+        index_counter = 0
         for i, m_values in enumerate(flat_mol_attention_mask):
             if m_values:
-                final_emb[i] = embeddings[i]
+                final_emb[i] = embeddings[index_counter]
+                index_counter += 1
         final_emb = final_emb.view(batch_size, max_seq_len, -1)
         return final_emb
 
