@@ -233,9 +233,9 @@ def main(debug):
     train_args = TrainingArguments(
         output_dir="results_mvm",
         num_train_epochs=10 if not debug else 10000,
-        per_device_train_batch_size=128,
-        per_device_eval_batch_size=128,
-        eval_accumulation_steps=100,
+        per_device_train_batch_size=1024,
+        per_device_eval_batch_size=1024,
+        eval_accumulation_steps=10,
         logging_dir="logs_mvm",
         logging_steps=100,
         save_steps=1000,
