@@ -10,6 +10,7 @@ from train_decoder import create_model
 from transformers.models.t5.modeling_t5 import T5Stack
 import copy
 import numpy as np
+import glob
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -269,7 +270,7 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
     )
     # score = trainer.evaluate()
     # print(score)
-    resume_from_checkpoint = os.path.exists(f"results_mvm/{output_suf}/checkpoint-500")
+    resume_from_checkpoint = len(glob.glob(f"results_mvm/{output_suf}/checkpoint*")) > 0
     trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
 
