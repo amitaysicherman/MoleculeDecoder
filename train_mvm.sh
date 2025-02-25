@@ -3,7 +3,7 @@
 #SBATCH --mem=64G
 #SBATCH --requeue
 #SBATCH -c 8
-#SBATCH --gres=gpu:L40:4
+#SBATCH --gres=gpu:L40:1
 #SBATCH --array=0-1
 
 sizes_list=('l' 'xl')
