@@ -14,9 +14,9 @@ import glob
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12}
-n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12}
-ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096}
+n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "xxl": 24}
+n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12, "xxl": 16}
+ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096, "xxl": 8192}
 
 
 def size_to_config(size):
@@ -284,7 +284,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--lr", type=float, default=0.0001)
-    parser.add_argument("--size", type=str, default="s", choices=['xs', "s", "m", "l", "xl"])
+    parser.add_argument("--size", type=str, default="s", choices=['xs', "s", "m", "l", "xl", "xxl"])
     parser.add_argument("--alpha", type=float, default=0.0)
     args = parser.parse_args()
     main(args.debug, args.batch_size, args.num_epochs, args.lr, args.size, args.alpha)
