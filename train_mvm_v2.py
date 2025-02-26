@@ -424,7 +424,8 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
         learning_rate=lr,
         lr_scheduler_type='constant',
         label_names=['tgt_input_ids', 'tgt_token_attention_mask', 'tgt_mol_attention_mask'],
-        seed=42
+        seed=42,
+        save_only_model=True,
     )
     trainer = Trainer(
         model=model,
@@ -433,7 +434,7 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
         eval_dataset=val_dataset,
         compute_metrics=lambda x: compute_metrics(x, debug=debug)
     )
-    # score = trainer.evaluate()
+    score = trainer.evaluate()
     # print(score)
     # resume_from_checkpoint = len(glob.glob(f"results_mvm/{output_suf}/checkpoint*")) > 0
     trainer.train(resume_from_checkpoint=False)
