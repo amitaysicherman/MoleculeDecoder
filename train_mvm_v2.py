@@ -149,6 +149,7 @@ class TransformerEncoderStack(nn.Module):
             num_layers=config.num_layers,
             norm=nn.LayerNorm(config.d_model)
         )
+        self.num_heads = config.num_heads
         self.pos_encoder = LearnedPositionalEncoding(config.d_model, config.max_seq_len)
 
     def forward(self, inputs_embeds, attention_mask=None):
@@ -158,11 +159,14 @@ class TransformerEncoderStack(nn.Module):
         # Create a proper mask for the transformer encoder
         # In PyTorch, the mask needs to be properly formatted
         if attention_mask is not None:
-            # Convert 1 (attend) -> 0 and 0 (ignore) -> -inf
-            encoder_attention_mask = attention_mask.unsqueeze(1)  # (batch, 1, seq)
-            encoder_attention_mask = encoder_attention_mask.expand(-1, attention_mask.size(1), -1)  # (batch, seq, seq)
+            # Convert (batch, seq) → (batch, 1, 1, seq) → (batch, num_heads, seq, seq)
+            encoder_attention_mask = attention_mask[:, None, None, :]  # (batch, 1, 1, seq)
+            encoder_attention_mask = encoder_attention_mask.expand(-1, self.num_heads, attention_mask.size(1),
+                                                                   -1)  # (batch, num_heads, seq, seq)
             encoder_attention_mask = encoder_attention_mask.masked_fill(encoder_attention_mask == 0, float('-inf'))
             encoder_attention_mask = encoder_attention_mask.masked_fill(encoder_attention_mask == 1, float(0.0))
+            bs, num_heads, seq_len, _ = encoder_attention_mask.size()
+            encoder_attention_mask = encoder_attention_mask.view(bs * num_heads, seq_len, seq_len)
         else:
             encoder_attention_mask = None
 
@@ -191,6 +195,7 @@ class TransformerDecoderStack(nn.Module):
             num_layers=config.num_decoder_layers,
             norm=nn.LayerNorm(config.d_model)
         )
+        self.num_heads = config.num_heads
         self.pos_encoder = LearnedPositionalEncoding(config.d_model, config.max_seq_len)
 
     def forward(self, inputs_embeds, encoder_hidden_states, attention_mask=None, encoder_attention_mask=None):
@@ -198,26 +203,33 @@ class TransformerDecoderStack(nn.Module):
         x = self.pos_encoder(inputs_embeds)
 
         # Create causal mask for autoregressive decoding
+        # Causal mask for autoregressive decoding (batch, num_heads, seq, seq)
         seq_len = x.size(1)
         causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=x.device), diagonal=1).bool()
+        causal_mask = causal_mask[None, None, :, :].expand(-1, self.num_heads, -1, -1)  # (1, num_heads, seq, seq)
 
-        # Convert attention_mask (batch, seq) -> (batch, seq, seq)
         if attention_mask is not None:
-            # 1 (attend) -> 0, 0 (ignore) -> -inf
-            tgt_mask = attention_mask.unsqueeze(1).expand(-1, attention_mask.size(1), -1)  # (batch, seq, seq)
+            # Convert (batch, seq) → (batch, 1, 1, seq) → (batch, num_heads, seq, seq)
+            tgt_mask = attention_mask[:, None, None, :].expand(-1, self.num_heads, attention_mask.size(1), -1)
             tgt_mask = tgt_mask.masked_fill(tgt_mask == 0, float('-inf'))
             tgt_mask = tgt_mask.masked_fill(tgt_mask == 1, float(0.0))
 
-            # Combine with causal mask (ensure decoder doesn't peek ahead)
+            # Combine causal mask with attention mask
             tgt_mask = tgt_mask.masked_fill(causal_mask, float('-inf'))
+            bs, num_heads, seq_len, _ = tgt_mask.size()
+            tgt_mask = tgt_mask.view(bs * num_heads, seq_len, seq_len)
         else:
             tgt_mask = causal_mask.float().masked_fill(causal_mask, float('-inf'))
+            bs, num_heads, seq_len, _ = tgt_mask.size()
+            tgt_mask = tgt_mask.view(bs * num_heads, seq_len, seq_len)
 
-        # Convert encoder_attention_mask (batch, seq) -> (batch, tgt_seq, src_seq)
         if encoder_attention_mask is not None:
-            memory_mask = encoder_attention_mask.unsqueeze(1).expand(-1, x.size(1), -1)  # (batch, tgt_seq, src_seq)
+            # Convert (batch, seq) → (batch, 1, 1, seq) → (batch, num_heads, tgt_seq, src_seq)
+            memory_mask = encoder_attention_mask[:, None, None, :].expand(-1, self.num_heads, x.size(1), -1)
             memory_mask = memory_mask.masked_fill(memory_mask == 0, float('-inf'))
             memory_mask = memory_mask.masked_fill(memory_mask == 1, float(0.0))
+            bs, num_heads, seq_len, _ = memory_mask.size()
+            memory_mask = memory_mask.view(bs * num_heads, seq_len, seq_len)
         else:
             memory_mask = None
 
