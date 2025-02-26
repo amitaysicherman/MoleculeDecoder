@@ -402,20 +402,21 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
     print(
         f"MODEL:MVM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
     output_suf = f"{size}_{lr}_{alpha}"
-    os.makedirs(f"results_mvm/{output_suf}", exist_ok=True)
+    os.makedirs(f"results_mvm2/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
-        output_dir=f"results_mvm/{output_suf}",
+        output_dir=f"results_mvm2/{output_suf}",
         num_train_epochs=num_epochs if not debug else 10000,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         eval_accumulation_steps=10,
-        logging_dir=f"logs_mvm/{output_suf}",
+        logging_dir=f"logs_mvm2/{output_suf}",
         logging_steps=100,
         save_steps=500,
         evaluation_strategy="steps",
         eval_steps=500,
         save_total_limit=1,
         load_best_model_at_end=True,
+        save_safetensors=False,
         # metric_for_best_model="eval_loss",
         greater_is_better=False,
         gradient_accumulation_steps=1,
@@ -434,8 +435,8 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
     )
     # score = trainer.evaluate()
     # print(score)
-    resume_from_checkpoint = len(glob.glob(f"results_mvm/{output_suf}/checkpoint*")) > 0
-    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    # resume_from_checkpoint = len(glob.glob(f"results_mvm/{output_suf}/checkpoint*")) > 0
+    trainer.train(resume_from_checkpoint=False)
 
 
 # run main to test dataset
