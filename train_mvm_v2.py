@@ -11,6 +11,7 @@ from train_decoder import create_model
 import copy
 import numpy as np
 import glob
+import json
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -51,6 +52,8 @@ class TransformerConfig:
         self.is_encoder_decoder = is_encoder_decoder
         self.use_cache = use_cache
 
+    def to_json_string(self):
+        return json.dumps(self.__dict__, indent=2)
 
 def size_to_config(size):
     return TransformerConfig(
