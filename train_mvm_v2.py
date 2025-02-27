@@ -260,7 +260,7 @@ class MVM(nn.Module):
             param.requires_grad = False
 
         self.decoder_model, _ = create_model()
-        state_dict = torch.load("results_decoder/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu'))
+        state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
         self.decoder_model.load_state_dict(state_dict, strict=True)
         self.decoder_model.eval()
         for param in self.decoder_model.parameters():
