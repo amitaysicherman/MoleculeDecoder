@@ -254,7 +254,8 @@ class MVM(nn.Module):
         self.encoder = AutoModel.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
             deterministic_eval=True,
-            trust_remote_code=True
+            trust_remote_code=True,
+            use_safetensors=False  # Force using PyTorch format instead of safetensors
         )
         for param in self.encoder.parameters():
             param.requires_grad = False
