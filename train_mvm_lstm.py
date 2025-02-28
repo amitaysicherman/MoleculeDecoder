@@ -2,33 +2,26 @@
 import torch
 from torch import nn
 from torch.utils.data import Dataset
-from torch.nn import TransformerEncoder, TransformerDecoder
-from torch.nn import TransformerEncoderLayer, TransformerDecoderLayer
 from transformers import AutoTokenizer, AutoModel, TrainingArguments, Trainer
 import os
 from torch.nn import functional as F
 from train_decoder import create_model
-import copy
 import numpy as np
-import json
-from transformers import BertConfig, BertModel
-
 # Model size configurations
 n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "xxl": 24}
 n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12, "xxl": 16}
 ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096, "xxl": 8192}
+lstm_hidden_dim = {"xs": 256, "s": 512, "m": 768, "l": 1024, "xl": 1536, "xxl": 2048}
+lstm_layers = {"xs": 1, "s": 2, "m": 3, "l": 4, "xl": 6, "xxl": 8}
 
 
 def size_to_config(size):
-    config = BertConfig(
-        vocab_size=1,
-        hidden_size=768,
-        num_hidden_layers=n_layers[size],
-        num_attention_heads=n_heads[size],
-        intermediate_size=ff_dim[size],
-        max_position_embeddings=512,
-    )
-    setattr(config, "d_model", config.hidden_size)
+    config = {
+        "hidden_size": 768,
+        "lstm_hidden_dim": lstm_hidden_dim[size],
+        "lstm_layers": lstm_layers[size],
+        "dropout": 0.1
+    }
     return config
 
 
@@ -86,6 +79,77 @@ class ReactionMolsDataset(Dataset):
         return len(self.src)
 
 
+class LSTMEncoder(nn.Module):
+    """LSTM encoder to replace BERT"""
+
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+        # LSTM layers
+        self.lstm = nn.LSTM(
+            input_size=config["hidden_size"],
+            hidden_size=config["lstm_hidden_dim"],
+            num_layers=config["lstm_layers"],
+            batch_first=True,
+            bidirectional=True,
+            dropout=config["dropout"] if config["lstm_layers"] > 1 else 0
+        )
+
+        # Projection layer to maintain same dimensionality as original model
+        self.projection = nn.Linear(config["lstm_hidden_dim"] * 2, config["hidden_size"])
+
+        # Pooler for [CLS] token equivalent functionality
+        self.pooler = nn.Sequential(
+            nn.Linear(config["hidden_size"], config["hidden_size"]),
+            nn.Tanh()
+        )
+
+        self.dropout = nn.Dropout(config["dropout"])
+
+    def forward(self, inputs_embeds, attention_mask=None):
+        batch_size = inputs_embeds.size(0)
+
+        # Apply attention mask if provided (for padding)
+        if attention_mask is not None:
+            # Create a mask for the LSTM (1 for valid positions, 0 for padding)
+            # The mask needs to be inverted for pack_padded_sequence
+            lengths = attention_mask.sum(dim=1).cpu()
+        else:
+            lengths = torch.full((batch_size,), inputs_embeds.size(1), device=inputs_embeds.device)
+
+        # Sort sequences by length for packed sequence (required by LSTM)
+        lengths, perm_idx = lengths.sort(0, descending=True)
+        inputs_embeds = inputs_embeds[perm_idx]
+
+        # Pack padded sequence
+        packed_embeds = nn.utils.rnn.pack_padded_sequence(
+            inputs_embeds, lengths, batch_first=True, enforce_sorted=True
+        )
+
+        # Pass through LSTM
+        outputs, (hidden, _) = self.lstm(packed_embeds)
+
+        # Unpack the sequence
+        sequence_output, _ = nn.utils.rnn.pad_packed_sequence(outputs, batch_first=True)
+
+        # Restore original order
+        _, unperm_idx = perm_idx.sort(0)
+        sequence_output = sequence_output[unperm_idx]
+
+        # Project to original dimension
+        sequence_output = self.projection(sequence_output)
+
+        # Get the [CLS] token equivalent (first token)
+        cls_output = sequence_output[:, 0]
+        pooled_output = self.pooler(cls_output)
+
+        return {
+            'last_hidden_state': sequence_output,
+            'pooler_output': pooled_output
+        }
+
+
 class MVM(nn.Module):
     def __init__(self, config, alpha=0.5):
         super().__init__()
@@ -107,11 +171,12 @@ class MVM(nn.Module):
         for param in self.decoder_model.parameters():
             param.requires_grad = False
 
-        self.bert_model = BertModel(config)
+        # Replace BERT with LSTM
+        self.lstm_model = LSTMEncoder(config)
 
-
-        self.cls_token = nn.Parameter(torch.randn(1, 1, config.d_model), requires_grad=True)
-        self.pad_embedding = nn.Parameter(torch.randn(config.d_model), requires_grad=True)
+        # CLS token and pad embedding remain the same concept
+        self.cls_token = nn.Parameter(torch.randn(1, 1, config["hidden_size"]), requires_grad=True)
+        self.pad_embedding = nn.Parameter(torch.randn(config["hidden_size"]), requires_grad=True)
 
     def get_mol_embeddings(self, input_ids, token_attention_mask, mol_attention_mask):
         """
@@ -158,12 +223,14 @@ class MVM(nn.Module):
         src_seq_mask = src_mol_attention_mask.float()
         # Add cls token to src_seq_mask
         src_seq_mask = torch.cat([torch.ones(src_seq_mask.size(0), 1).to(src_seq_mask.device), src_seq_mask], dim=1)
-        output = self.bert_model(inputs_embeds=src_embeddings, attention_mask=src_seq_mask)
-        bert_predict = output['pooler_output']
+
+        # Use LSTM instead of BERT
+        output = self.lstm_model(inputs_embeds=src_embeddings, attention_mask=src_seq_mask)
+        lstm_predict = output['pooler_output']
 
         gt_tgt_embeddings = self.get_mol_embeddings(tgt_input_ids, tgt_token_attention_mask, tgt_mol_attention_mask)
         gt_tgt_embeddings = gt_tgt_embeddings[:, 0, :]
-        loss = F.mse_loss(bert_predict, gt_tgt_embeddings)
+        loss = F.mse_loss(lstm_predict, gt_tgt_embeddings)
 
         tgt_input_ids_decoder = tgt_input_ids[:, 0].clone()
         labels = tgt_input_ids_decoder.clone()
@@ -171,10 +238,10 @@ class MVM(nn.Module):
         labels_mask = tgt_token_attention_mask[:, 0]
         labels[labels_mask == 0] = -100
 
-        decoder_output = self.decoder_model(encoder_outputs=bert_predict, labels=labels,
+        decoder_output = self.decoder_model(encoder_outputs=lstm_predict, labels=labels,
                                             input_ids=tgt_input_ids_decoder)
 
-        decoder_output.decoder_hidden_states = bert_predict
+        decoder_output.decoder_hidden_states = lstm_predict
         decoder_output.loss = self.alpha * loss + (1 - self.alpha) * decoder_output.loss
 
         return decoder_output
@@ -225,16 +292,16 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
     non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
     total_params = trainable_params + non_trainable_params
     print(
-        f"MODEL:MVM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
-    output_suf = f"{size}_{lr}_{alpha}"
-    os.makedirs(f"results_mvm_bert/{output_suf}", exist_ok=True)
+        f"MODEL:MVM-LSTM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
+    output_suf = f"lstm_{size}_{lr}_{alpha}"
+    os.makedirs(f"results_mvm_lstm/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
-        output_dir=f"results_mvm_bert/{output_suf}",
+        output_dir=f"results_mvm_lstm/{output_suf}",
         num_train_epochs=num_epochs if not debug else 10000,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         eval_accumulation_steps=10,
-        logging_dir=f"logs_mvm_bert/{output_suf}",
+        logging_dir=f"logs_mvm_lstm/{output_suf}",
         logging_steps=100,
         save_steps=500,
         evaluation_strategy="steps",
