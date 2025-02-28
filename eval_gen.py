@@ -136,7 +136,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #
 def load_models():
     decoder_model, tokenizer = create_model()
-    state_dict = torch.load("results_decoder/checkpoint-90000/pytorch_model.bin", map_location=torch.device('cpu'))
+    state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
     decoder_model.load_state_dict(state_dict, strict=True)
     decoder_model = decoder_model.to(device).eval()
 

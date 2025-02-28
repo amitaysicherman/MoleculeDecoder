@@ -1,33 +1,35 @@
-# Molecule vector model
+# Molecule vector model with PyTorch transformer
 import torch
 from torch import nn
-from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, PreTrainedModel, AutoModel, T5Config, TrainingArguments, Trainer
+from torch.utils.data import Dataset
+from torch.nn import TransformerEncoder, TransformerDecoder
+from torch.nn import TransformerEncoderLayer, TransformerDecoderLayer
+from transformers import AutoTokenizer, AutoModel, TrainingArguments, Trainer
 import os
 from torch.nn import functional as F
-from transformers import PreTrainedModel
 from train_decoder import create_model
-from transformers.models.t5.modeling_t5 import T5Stack
 import copy
 import numpy as np
-import glob
+import json
+from transformers import BertConfig, BertModel
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+# Model size configurations
 n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "xxl": 24}
 n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12, "xxl": 16}
 ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096, "xxl": 8192}
 
 
 def size_to_config(size):
-    return T5Config(
-        vocab_size=1,  # not used
-        d_model=768,
-        d_ff=ff_dim[size],
-        num_layers=n_layers[size],
-        num_decoder_layers=n_layers[size],
-        num_heads=n_heads[size]
+    config = BertConfig(
+        vocab_size=1,
+        hidden_size=768,
+        num_hidden_layers=n_layers[size],
+        num_attention_heads=n_heads[size],
+        intermediate_size=ff_dim[size],
+        max_position_embeddings=512,
     )
+    setattr(config, "d_model", config.hidden_size)
+    return config
 
 
 def load_smiles_file(file_name):
@@ -84,15 +86,16 @@ class ReactionMolsDataset(Dataset):
         return len(self.src)
 
 
-class MVM(PreTrainedModel):
+class MVM(nn.Module):
     def __init__(self, config, alpha=0.5):
-        super().__init__(config)
+        super().__init__()
         self.config = config
         self.alpha = alpha
         self.encoder = AutoModel.from_pretrained(
             "ibm/MoLFormer-XL-both-10pct",
             deterministic_eval=True,
-            trust_remote_code=True
+            trust_remote_code=True,
+            use_safetensors=False  # Force using PyTorch format instead of safetensors
         )
         for param in self.encoder.parameters():
             param.requires_grad = False
@@ -103,20 +106,12 @@ class MVM(PreTrainedModel):
         self.decoder_model.eval()
         for param in self.decoder_model.parameters():
             param.requires_grad = False
-        encoder_config = copy.deepcopy(config)
-        encoder_config.is_decoder = False
-        encoder_config.use_cache = False
-        encoder_config.is_encoder_decoder = False
-        self.mvm_encoder = T5Stack(encoder_config)
 
-        decoder_config = copy.deepcopy(config)
-        decoder_config.is_decoder = True
-        decoder_config.is_encoder_decoder = False
-        decoder_config.num_layers = config.num_decoder_layers
-        self.mvm_decoder = T5Stack(decoder_config)
+        self.bert_model = BertModel(config)
+        self.bert_model
 
-        self.decoder_start_embedding = nn.Parameter(torch.randn(1, 1, config.d_model))
-        self.pad_embedding = nn.Parameter(torch.randn(config.d_model))
+        self.cls_token = nn.Parameter(torch.randn(1, 1, config.d_model), requires_grad=True)
+        self.pad_embedding = nn.Parameter(torch.randn(config.d_model), requires_grad=True)
 
     def get_mol_embeddings(self, input_ids, token_attention_mask, mol_attention_mask):
         """
@@ -152,29 +147,22 @@ class MVM(PreTrainedModel):
         final_emb = final_emb.view(batch_size, max_seq_len, -1)
         return final_emb
 
-    def shift_vectors_right(self, vectors):
-        """
-        Shift vectors to the right by one position
-        """
-        padding = self.decoder_start_embedding.expand(vectors.size(0), 1, -1)
-        return torch.cat([padding, vectors[:, :-1]], dim=1)
-
     def forward(self, src_input_ids, src_token_attention_mask, src_mol_attention_mask,
                 tgt_input_ids, tgt_token_attention_mask, tgt_mol_attention_mask):
         src_embeddings = self.get_mol_embeddings(src_input_ids, src_token_attention_mask, src_mol_attention_mask)
-        tgt_embeddings = self.get_mol_embeddings(tgt_input_ids, tgt_token_attention_mask, tgt_mol_attention_mask)
-        mvm_encoder_outputs = self.mvm_encoder(inputs_embeds=src_embeddings)
-        mvm_encoder_outputs = mvm_encoder_outputs['last_hidden_state']
-        shifted_tgt_embeddings = self.shift_vectors_right(tgt_embeddings)
-        mvm_decoder_outputs = self.mvm_decoder(inputs_embeds=shifted_tgt_embeddings,
-                                               encoder_hidden_states=mvm_encoder_outputs)
-        mvm_decoder_outputs = mvm_decoder_outputs['last_hidden_state']
-        # correctly use just the first sequence (single product)
-        mvm_decoder_outputs = mvm_decoder_outputs[:, 0, :]
+
+        # add self.cls_token to src_embeddings in the first position
+        src_embeddings = torch.cat([self.cls_token.expand(src_embeddings.size(0), -1, -1), src_embeddings], dim=1)
+
+        # Convert mol_attention_mask to proper format if needed
+        src_seq_mask = src_mol_attention_mask.float()
+        output = self.bert_model(inputs_embeds=src_embeddings, attention_mask=src_seq_mask)
+        bert_predict = output['pooler_output']
+        print(bert_predict.shape)
 
         gt_tgt_embeddings = self.get_mol_embeddings(tgt_input_ids, tgt_token_attention_mask, tgt_mol_attention_mask)
         gt_tgt_embeddings = gt_tgt_embeddings[:, 0, :]
-        loss = F.mse_loss(mvm_decoder_outputs, gt_tgt_embeddings)
+        loss = F.mse_loss(bert_predict, gt_tgt_embeddings)
 
         tgt_input_ids_decoder = tgt_input_ids[:, 0].clone()
         labels = tgt_input_ids_decoder.clone()
@@ -182,10 +170,10 @@ class MVM(PreTrainedModel):
         labels_mask = tgt_token_attention_mask[:, 0]
         labels[labels_mask == 0] = -100
 
-        decoder_output = self.decoder_model(encoder_outputs=mvm_decoder_outputs, labels=labels,
+        decoder_output = self.decoder_model(encoder_outputs=bert_predict, labels=labels,
                                             input_ids=tgt_input_ids_decoder)
 
-        decoder_output.decoder_hidden_states = mvm_decoder_outputs
+        decoder_output.decoder_hidden_states = bert_predict
         decoder_output.loss = self.alpha * loss + (1 - self.alpha) * decoder_output.loss
 
         return decoder_output
@@ -229,7 +217,7 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
     if debug:
         size = "xs"
     config = size_to_config(size)
-    model = MVM(config, alpha)
+    model = MVM(config=config, alpha=alpha)
     if debug:
         print(model)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -238,20 +226,21 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
     print(
         f"MODEL:MVM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
     output_suf = f"{size}_{lr}_{alpha}"
-    os.makedirs(f"results_mvm/{output_suf}", exist_ok=True)
+    os.makedirs(f"results_mvm_bert/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
-        output_dir=f"results_mvm/{output_suf}",
+        output_dir=f"results_mvm_bert/{output_suf}",
         num_train_epochs=num_epochs if not debug else 10000,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         eval_accumulation_steps=10,
-        logging_dir=f"logs_mvm/{output_suf}",
+        logging_dir=f"logs_mvm_bert/{output_suf}",
         logging_steps=100,
         save_steps=500,
         evaluation_strategy="steps",
         eval_steps=500,
         save_total_limit=1,
         load_best_model_at_end=True,
+        save_safetensors=False,
         # metric_for_best_model="eval_loss",
         greater_is_better=False,
         gradient_accumulation_steps=1,
@@ -259,7 +248,8 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
         learning_rate=lr,
         lr_scheduler_type='constant',
         label_names=['tgt_input_ids', 'tgt_token_attention_mask', 'tgt_mol_attention_mask'],
-        seed=42
+        seed=42,
+        save_only_model=True,
     )
     trainer = Trainer(
         model=model,
@@ -268,10 +258,8 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
         eval_dataset=val_dataset,
         compute_metrics=lambda x: compute_metrics(x, debug=debug)
     )
-    # score = trainer.evaluate()
-    # print(score)
-    resume_from_checkpoint = len(glob.glob(f"results_mvm/{output_suf}/checkpoint*")) > 0
-    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+    score = trainer.evaluate()
+    trainer.train(resume_from_checkpoint=False)
 
 
 # run main to test dataset
