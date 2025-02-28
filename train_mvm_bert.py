@@ -156,6 +156,8 @@ class MVM(nn.Module):
 
         # Convert mol_attention_mask to proper format if needed
         src_seq_mask = src_mol_attention_mask.float()
+        # Add cls token to src_seq_mask
+        src_seq_mask = torch.cat([torch.ones(src_seq_mask.size(0), 1).to(src_seq_mask.device), src_seq_mask], dim=1)
         output = self.bert_model(inputs_embeds=src_embeddings, attention_mask=src_seq_mask)
         bert_predict = output['pooler_output']
         print(bert_predict.shape)
