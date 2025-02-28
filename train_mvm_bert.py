@@ -160,7 +160,6 @@ class MVM(nn.Module):
         src_seq_mask = torch.cat([torch.ones(src_seq_mask.size(0), 1).to(src_seq_mask.device), src_seq_mask], dim=1)
         output = self.bert_model(inputs_embeds=src_embeddings, attention_mask=src_seq_mask)
         bert_predict = output['pooler_output']
-        print(bert_predict.shape)
 
         gt_tgt_embeddings = self.get_mol_embeddings(tgt_input_ids, tgt_token_attention_mask, tgt_mol_attention_mask)
         gt_tgt_embeddings = gt_tgt_embeddings[:, 0, :]
@@ -260,7 +259,6 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
         eval_dataset=val_dataset,
         compute_metrics=lambda x: compute_metrics(x, debug=debug)
     )
-    score = trainer.evaluate()
     trainer.train(resume_from_checkpoint=False)
 
 
