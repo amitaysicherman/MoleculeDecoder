@@ -2,16 +2,17 @@
 import torch
 from torch import nn
 from torch.utils.data import Dataset
-from torch.nn import TransformerEncoder, TransformerDecoder
-from torch.nn import TransformerEncoderLayer, TransformerDecoderLayer
 from transformers import AutoTokenizer, AutoModel, TrainingArguments, Trainer
 import os
 from torch.nn import functional as F
 from train_decoder import create_model
-import copy
 import numpy as np
-import json
 from transformers import BertConfig, BertModel
+from rdkit import Chem
+from rdkit import RDLogger
+from tqdm import tqdm
+
+RDLogger.DisableLog('rdApp.*')
 
 # Model size configurations
 n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "xxl": 24}
@@ -32,11 +33,29 @@ def size_to_config(size):
     return config
 
 
+def get_canonical_smiles(smiles):
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    canonical_smiles = Chem.MolToSmiles(mol, isomericSmiles=True, canonical=True)
+    return canonical_smiles
+
+
 def load_smiles_file(file_name):
     with open(file_name) as f:
         lines = f.read().splitlines()
-    lines = [line.replace(" ", "").split(".") for line in lines]
-    return lines
+    can_smiles = []
+    for line in tqdm(lines):
+
+        line = line.strip().replace(" ", "").split(".")
+        can_smiles_line = [get_canonical_smiles(s) for s in line]
+        if None in can_smiles_line:
+            can_smiles.append(None)
+        elif any([len(s) > 75 for s in can_smiles_line]):
+            can_smiles.append(None)
+        else:
+            can_smiles.append(can_smiles_line)
+    return can_smiles
 
 
 class ReactionMolsDataset(Dataset):
@@ -44,8 +63,15 @@ class ReactionMolsDataset(Dataset):
         self.max_len = 10
         self.src = load_smiles_file(f"{base_dir}/src-{split}.txt")
         self.tgt = load_smiles_file(f"{base_dir}/tgt-{split}.txt")
-        self.src, self.tgt = zip(
-            *[(s, t) for s, t in zip(self.src, self.tgt) if len(s) <= self.max_len and len(t) <= self.max_len])
+        drop_indexes = []
+        for i in range(len(self.src)):
+            if self.src[i] is None or self.tgt[i] is None or len(self.src[i]) > self.max_len or len(
+                    self.tgt[i]) > self.max_len:
+                drop_indexes.append(i)
+        print(f"Dropping {len(drop_indexes)}/{len(self.src)} samples")
+        self.src = [self.src[i] for i in range(len(self.src)) if i not in drop_indexes]
+        self.tgt = [self.tgt[i] for i in range(len(self.tgt)) if i not in drop_indexes]
+
         if debug:
             self.src = self.src[:2]
             self.tgt = self.tgt[:2]
@@ -278,6 +304,6 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument("--size", type=str, default="s", choices=['xs', "s", "m", "l", "xl", "xxl"])
     parser.add_argument("--alpha", type=float, default=0.0)
-    parser.add_argument("train_all", action="store_true")
+    parser.add_argument("--train_all", action="store_true")
     args = parser.parse_args()
     main(args.debug, args.batch_size, args.num_epochs, args.lr, args.size, args.alpha, args.train_all)
