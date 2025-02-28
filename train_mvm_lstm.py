@@ -7,6 +7,8 @@ import os
 from torch.nn import functional as F
 from train_decoder import create_model
 import numpy as np
+import json
+
 # Model size configurations
 n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "xxl": 24}
 n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12, "xxl": 16}
@@ -15,14 +17,26 @@ lstm_hidden_dim = {"xs": 256, "s": 512, "m": 768, "l": 1024, "xl": 1536, "xxl": 
 lstm_layers = {"xs": 1, "s": 2, "m": 3, "l": 4, "xl": 6, "xxl": 8}
 
 
+class LSTMConfig:
+    def __init__(self, hidden_size=768, lstm_hidden_dim=768, lstm_layers=3, dropout=0.1):
+        self.hidden_size = hidden_size
+        self.lstm_hidden_dim = lstm_hidden_dim
+        self.lstm_layers = lstm_layers
+        self.hidden_size = hidden_size
+        self.d_model = hidden_size
+        self.dropout = dropout
+
+    def to_json_string(self):
+        return json.dumps(self.__dict__, indent=2)
+
+
 def size_to_config(size):
-    config = {
-        "hidden_size": 768,
-        "lstm_hidden_dim": lstm_hidden_dim[size],
-        "lstm_layers": lstm_layers[size],
-        "dropout": 0.1
-    }
-    return config
+    return LSTMConfig(
+        hidden_size=768,
+        lstm_hidden_dim=lstm_hidden_dim[size],
+        lstm_layers=lstm_layers[size],
+        dropout=0.1
+    )
 
 
 def load_smiles_file(file_name):
@@ -88,24 +102,24 @@ class LSTMEncoder(nn.Module):
 
         # LSTM layers
         self.lstm = nn.LSTM(
-            input_size=config["hidden_size"],
-            hidden_size=config["lstm_hidden_dim"],
-            num_layers=config["lstm_layers"],
+            input_size=config.hidden_size,
+            hidden_size=config.lstm_hidden_dim,
+            num_layers=config.lstm_layers,
             batch_first=True,
             bidirectional=True,
-            dropout=config["dropout"] if config["lstm_layers"] > 1 else 0
+            dropout=config.dropout if config.lstm_layers > 1 else 0
         )
 
         # Projection layer to maintain same dimensionality as original model
-        self.projection = nn.Linear(config["lstm_hidden_dim"] * 2, config["hidden_size"])
+        self.projection = nn.Linear(config.lstm_hidden_dim * 2, config.hidden_size)
 
         # Pooler for [CLS] token equivalent functionality
         self.pooler = nn.Sequential(
-            nn.Linear(config["hidden_size"], config["hidden_size"]),
+            nn.Linear(config.hidden_size, config.idden_size),
             nn.Tanh()
         )
 
-        self.dropout = nn.Dropout(config["dropout"])
+        self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, inputs_embeds, attention_mask=None):
         batch_size = inputs_embeds.size(0)
