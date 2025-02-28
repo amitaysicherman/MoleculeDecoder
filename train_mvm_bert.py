@@ -61,17 +61,17 @@ def load_smiles_file(file_name):
 class ReactionMolsDataset(Dataset):
     def __init__(self, base_dir="USPTO", split="train", debug=False):
         self.max_len = 10
-        self.src = load_smiles_file(f"{base_dir}/src-{split}.txt")
-        self.tgt = load_smiles_file(f"{base_dir}/tgt-{split}.txt")
-        drop_indexes = []
-        for i in range(len(self.src)):
-            if self.src[i] is None or self.tgt[i] is None or len(self.src[i]) > self.max_len or len(
-                    self.tgt[i]) > self.max_len:
-                drop_indexes.append(i)
-        print(f"Dropping {len(drop_indexes)}/{len(self.src)} samples")
-        self.src = [self.src[i] for i in range(len(self.src)) if i not in drop_indexes]
-        self.tgt = [self.tgt[i] for i in range(len(self.tgt)) if i not in drop_indexes]
-
+        self.src_non_filter = load_smiles_file(f"{base_dir}/src-{split}.txt")
+        self.tgt_non_filter = load_smiles_file(f"{base_dir}/tgt-{split}.txt")
+        self.src = []
+        self.tgt = []
+        for i in range(len(self.src_non_filter)):
+            if self.src_non_filter[i] is None or self.tgt_non_filter[i] is None or len(
+                    self.src_non_filter[i]) > self.max_len or len(self.tgt_non_filter[i]) > self.max_len:
+                continue
+            self.src.append(self.src_non_filter[i])
+            self.tgt.append(self.tgt_non_filter[i])
+        print(f"Loaded {len(self.src)}/{self.src_non_filter} samples from {base_dir}/{split}.txt")
         if debug:
             self.src = self.src[:2]
             self.tgt = self.tgt[:2]
