@@ -87,7 +87,7 @@ class ReactionMolsDataset(Dataset):
 
 
 class MVM(nn.Module):
-    def __init__(self, config, alpha=0.5):
+    def __init__(self, config, alpha=0.5, train_all=False):
         super().__init__()
         self.config = config
         self.alpha = alpha
@@ -96,16 +96,19 @@ class MVM(nn.Module):
             deterministic_eval=True,
             trust_remote_code=True,
             use_safetensors=False  # Force using PyTorch format instead of safetensors
-        ).eval()
-        for param in self.encoder.parameters():
-            param.requires_grad = False
+        )
+        if train_all == False:
+            self.encoder.eval()
+            for param in self.encoder.parameters():
+                param.requires_grad = False
 
         self.decoder_model, _ = create_model()
         state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
         self.decoder_model.load_state_dict(state_dict, strict=True)
-        self.decoder_model.eval()
-        for param in self.decoder_model.parameters():
-            param.requires_grad = False
+        if train_all == False:
+            self.decoder_model.eval()
+            for param in self.decoder_model.parameters():
+                param.requires_grad = False
 
         self.bert_model = BertModel(config)
 
@@ -211,13 +214,13 @@ def compute_metrics(eval_pred, debug=False):
     }
 
 
-def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
+def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, train_all=False):
     train_dataset = ReactionMolsDataset(split="train", debug=debug)
     val_dataset = ReactionMolsDataset(split="valid", debug=debug)
     if debug:
         size = "xs"
     config = size_to_config(size)
-    model = MVM(config=config, alpha=alpha)
+    model = MVM(config=config, alpha=alpha, train_all=train_all)
     if debug:
         print(model)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -226,6 +229,8 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
     print(
         f"MODEL:MVM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
     output_suf = f"{size}_{lr}_{alpha}"
+    if train_all:
+        output_suf += "_train-all"
     os.makedirs(f"results_mvm_bert/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
         output_dir=f"results_mvm_bert/{output_suf}",
@@ -273,5 +278,6 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument("--size", type=str, default="s", choices=['xs', "s", "m", "l", "xl", "xxl"])
     parser.add_argument("--alpha", type=float, default=0.0)
+    parser.add_argument("train_all", action="store_true")
     args = parser.parse_args()
-    main(args.debug, args.batch_size, args.num_epochs, args.lr, args.size, args.alpha)
+    main(args.debug, args.batch_size, args.num_epochs, args.lr, args.size, args.alpha, args.train_all)
