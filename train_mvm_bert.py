@@ -71,7 +71,7 @@ class ReactionMolsDataset(Dataset):
                 continue
             self.src.append(self.src_non_filter[i])
             self.tgt.append(self.tgt_non_filter[i])
-        print(f"Loaded {len(self.src)}/{self.src_non_filter} samples from {base_dir}/{split}.txt")
+        print(f"Loaded {len(self.src)}/{len(self.src_non_filter)} samples from {base_dir}/{split}.txt")
         if debug:
             self.src = self.src[:2]
             self.tgt = self.tgt[:2]
