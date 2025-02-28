@@ -96,7 +96,7 @@ class MVM(nn.Module):
             deterministic_eval=True,
             trust_remote_code=True,
             use_safetensors=False  # Force using PyTorch format instead of safetensors
-        )
+        ).eval()
         for param in self.encoder.parameters():
             param.requires_grad = False
 
@@ -108,7 +108,6 @@ class MVM(nn.Module):
             param.requires_grad = False
 
         self.bert_model = BertModel(config)
-
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, config.d_model), requires_grad=True)
         self.pad_embedding = nn.Parameter(torch.randn(config.d_model), requires_grad=True)
