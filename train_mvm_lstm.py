@@ -115,7 +115,7 @@ class LSTMEncoder(nn.Module):
 
         # Pooler for [CLS] token equivalent functionality
         self.pooler = nn.Sequential(
-            nn.Linear(config.hidden_size, config.idden_size),
+            nn.Linear(config.hidden_size, config.hidden_size),
             nn.Tanh()
         )
 
@@ -189,8 +189,8 @@ class MVM(nn.Module):
         self.lstm_model = LSTMEncoder(config)
 
         # CLS token and pad embedding remain the same concept
-        self.cls_token = nn.Parameter(torch.randn(1, 1, config["hidden_size"]), requires_grad=True)
-        self.pad_embedding = nn.Parameter(torch.randn(config["hidden_size"]), requires_grad=True)
+        self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size), requires_grad=True)
+        self.pad_embedding = nn.Parameter(torch.randn(config.hidden_size), requires_grad=True)
 
     def get_mol_embeddings(self, input_ids, token_attention_mask, mol_attention_mask):
         """
