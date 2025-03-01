@@ -117,24 +117,6 @@ class MVM(nn.Module):
         super().__init__()
         self.config = config
         self.alpha = alpha
-        self.encoder = AutoModel.from_pretrained(
-            "ibm/MoLFormer-XL-both-10pct",
-            deterministic_eval=True,
-            trust_remote_code=True,
-            use_safetensors=False  # Force using PyTorch format instead of safetensors
-        )
-        if train_all == False:
-            self.encoder.eval()
-            for param in self.encoder.parameters():
-                param.requires_grad = False
-
-        self.decoder_model, _ = create_model()
-        state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
-        self.decoder_model.load_state_dict(state_dict, strict=True)
-        if train_all == False:
-            self.decoder_model.eval()
-            for param in self.decoder_model.parameters():
-                param.requires_grad = False
 
         self.bert_model = BertModel(config)
 
@@ -159,7 +141,7 @@ class MVM(nn.Module):
             chunk_input_ids = flat_input_ids[i:i + chunk_size]
             chunk_attention_mask = flat_attention_mask[i:i + chunk_size]
             with torch.no_grad():
-                outputs = self.encoder(
+                outputs = encoder(
                     input_ids=chunk_input_ids,
                     attention_mask=chunk_attention_mask
                 )
@@ -199,7 +181,7 @@ class MVM(nn.Module):
         labels_mask = tgt_token_attention_mask[:, 0]
         labels[labels_mask == 0] = -100
 
-        decoder_output = self.decoder_model(encoder_outputs=bert_predict, labels=labels,
+        decoder_output = decoder_model(encoder_outputs=bert_predict, labels=labels,
                                             input_ids=tgt_input_ids_decoder)
 
         decoder_output.decoder_hidden_states = bert_predict
@@ -306,4 +288,22 @@ if __name__ == "__main__":
     parser.add_argument("--alpha", type=float, default=0.0)
     parser.add_argument("--train_all", action="store_true")
     args = parser.parse_args()
+
+    encoder = AutoModel.from_pretrained(
+        "ibm/MoLFormer-XL-both-10pct",
+        deterministic_eval=True,
+        trust_remote_code=True,
+        use_safetensors=False  # Force using PyTorch format instead of safetensors
+    )
+    encoder.eval()
+    for param in encoder.parameters():
+        param.requires_grad = False
+
+    decoder_model, _ = create_model()
+    state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
+    decoder_model.load_state_dict(state_dict, strict=True)
+    decoder_model.eval()
+    for param in decoder_model.parameters():
+        param.requires_grad = False
+
     main(args.debug, args.batch_size, args.num_epochs, args.lr, args.size, args.alpha, args.train_all)
