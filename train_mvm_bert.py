@@ -19,7 +19,7 @@ n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "xxl": 24}
 n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12, "xxl": 16}
 ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096, "xxl": 8192}
 
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def size_to_config(size):
     config = BertConfig(
         vocab_size=1,
@@ -295,14 +295,14 @@ if __name__ == "__main__":
         trust_remote_code=True,
         use_safetensors=False  # Force using PyTorch format instead of safetensors
     )
-    encoder.eval()
+    encoder.eval().to(device)
     for param in encoder.parameters():
         param.requires_grad = False
 
     decoder_model, _ = create_model()
     state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
     decoder_model.load_state_dict(state_dict, strict=True)
-    decoder_model.eval()
+    decoder_model.eval().to(device)
     for param in decoder_model.parameters():
         param.requires_grad = False
 
