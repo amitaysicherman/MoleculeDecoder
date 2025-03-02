@@ -286,7 +286,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--lr", type=float, default=0.0001)
-    parser.add_argument("--size", type=str, default="s", choices=['xs', "s", "m", "l", "xl", "xxl"])
+    parser.add_argument("--size", type=str, default="s")
     parser.add_argument("--alpha", type=float, default=0.0)
     parser.add_argument("--train_all", action="store_true")
     args = parser.parse_args()
