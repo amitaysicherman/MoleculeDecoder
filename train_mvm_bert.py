@@ -15,11 +15,13 @@ from tqdm import tqdm
 RDLogger.DisableLog('rdApp.*')
 
 # Model size configurations
-n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "xxl": 24}
-n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12, "xxl": 16}
-ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096, "xxl": 8192}
+n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "xxl": 24, "ld": 24}
+n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12, "xxl": 16, "ld": 12}
+ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096, "xxl": 8192, "ld": 4096}
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 def size_to_config(size):
     config = BertConfig(
         vocab_size=1,
@@ -182,7 +184,7 @@ class MVM(nn.Module):
         labels[labels_mask == 0] = -100
 
         decoder_output = decoder_model(encoder_outputs=bert_predict, labels=labels,
-                                            input_ids=tgt_input_ids_decoder)
+                                       input_ids=tgt_input_ids_decoder)
 
         decoder_output.decoder_hidden_states = bert_predict
         decoder_output.loss = self.alpha * loss + (1 - self.alpha) * decoder_output.loss
