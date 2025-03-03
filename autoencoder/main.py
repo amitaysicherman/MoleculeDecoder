@@ -65,6 +65,8 @@ if __name__ == "__main__":
 
     model = get_model(args.model, args.size, dataset.tokenizer)
     name = args_to_name(args)
+    output_dir = f"res_auto/{name}"
+    log_dir = f"logs_auto/{name}"
     training_args = TrainingArguments(
         output_dir=f"./{name}",
         num_train_epochs=10,
@@ -73,6 +75,7 @@ if __name__ == "__main__":
         eval_accumulation_steps=1,
         save_total_limit=1,
         save_safetensors=False,
+        logging_dir=log_dir,
         evaluation_strategy="steps",
         report_to=["tensorboard"],
         logging_steps=500,
@@ -94,4 +97,4 @@ if __name__ == "__main__":
         eval_dataset=val_dataset,
         compute_metrics=compute_metrics
     )
-    trainer.train(resume_from_checkpoint=check_checkpoint(name))
+    trainer.train(resume_from_checkpoint=check_checkpoint(output_dir))
