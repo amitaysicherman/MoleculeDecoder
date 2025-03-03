@@ -47,7 +47,7 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
         tokens = smiles_to_tokens(smiles)
         return tokens
 
-    counter = Counter()
+    tokens_set = set()
     with open(input_file, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
     cpu_count = os.cpu_count()
@@ -60,11 +60,11 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
             # Process results as they complete
             for future in futures:
                 tokens = future.result()
-                counter.update(tokens)
+                tokens_set.update(set(tokens))
                 pbar.update(1)  # Update tqdm manually
     vocab = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
     idx = len(vocab)
-    for token, count in counter.items():
+    for token in tokens_set:
         vocab[token] = idx
         idx += 1
     print(f"Vocabulary size: {len(vocab)}")
