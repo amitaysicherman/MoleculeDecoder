@@ -27,7 +27,9 @@ def preprocess_smiles(smiles: str) -> str:
 
 def smiles_to_tokens(smiles: str) -> list:
     # canonicalize SMILES and remove stereochemistry
-    smiles = preprocess_smiles(smiles)
+    p_smiles = preprocess_smiles(smiles)
+    if p_smiles!=smiles:
+        print(f"Canonicalized SMILES from {smiles} to {p_smiles}")
     tokens = [token for token in SMILES_REGEX.findall(smiles)]
     return tokens
 
