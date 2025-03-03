@@ -62,7 +62,6 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
         print(f"Loading existing tokenizer from {tokenizer_file}")
         return PreTrainedTokenizerFast.from_pretrained(tokenizer_file)
 
-    tokens_set = set()
     with open(input_file, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
     print(f"Processing {len(lines)} lines")
@@ -103,7 +102,7 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     #         pbar.update(1)  # Update tqdm manually
     vocab = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
     idx = len(vocab)
-    for token in tokens_set:
+    for token in final_set:
         vocab[token] = idx
         idx += 1
     print(f"Vocabulary size: {len(vocab)}")
