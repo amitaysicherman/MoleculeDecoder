@@ -13,8 +13,6 @@ RDLogger.DisableLog('rdApp.*')
 tokenizer_file = "pubchem-canonical/tokenizer/"
 
 
-
-
 def preprocess_smiles(smiles: str) -> str:
     # Remove stereochemistry and canonicalize SMILES
     mol = Chem.MolFromSmiles(smiles)
@@ -87,20 +85,20 @@ class AutoEncoderDataset(Dataset):
     def __init__(self, input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi", max_length=75):
         self.tokenizer = get_tokenizer(input_file)
         self.max_length = max_length
-        self.data = []
         with open(input_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                _, smiles = line.strip().split()
-                tokens = smiles_to_tokens(smiles)
-                if len(tokens) > max_length:
-                    continue
-                self.data.append(" ".join(tokens))
+            self.data = f.read().splitlines()
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        source = self.data[idx]
+        line = self.data[idx]
+        _, smiles = line.strip().split()
+        tokens = smiles_to_tokens(smiles)
+        if len(tokens) > self.max_length:
+            return self.__getitem__((idx + 1) % len(self.data))
+        source = " ".join(tokens)
+
         source_encoding = self.tokenizer(
             source,
             max_length=self.max_length,
