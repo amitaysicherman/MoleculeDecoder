@@ -10,7 +10,7 @@ from rdkit import Chem
 from tokenizers.pre_tokenizers import Whitespace
 from rdkit import RDLogger
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 
 RDLogger.DisableLog('rdApp.*')
 
@@ -40,6 +40,7 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
         print(f"Loading existing tokenizer from {tokenizer_file}")
         return PreTrainedTokenizerFast.from_pretrained(tokenizer_file)
 
+    from concurrent.futures import ProcessPoolExecutor
 
     def process_line(line):
         smiles = line.strip().split()[1]
@@ -50,15 +51,10 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     with open(input_file, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
     cpu_count = os.cpu_count()
-    num_workers = min(cpu_count, 32)
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        futures = {executor.submit(process_line, line): line for line in lines}
-
-        with tqdm(total=len(lines), desc="Processing SMILES", unit="line") as pbar:
-            for future in as_completed(futures):
-                tokens = future.result()
-                counter.update(tokens)
-                pbar.update(1)  # Manually update the progress bar
+    num_workers = min(cpu_count, 8)
+    with ProcessPoolExecutor(num_workers) as executor:
+        for tokens in tqdm(executor.map(process_line, lines), total=len(lines)):
+            counter.update(tokens)
 
     vocab = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
     idx = len(vocab)
