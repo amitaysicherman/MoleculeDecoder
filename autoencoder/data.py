@@ -30,7 +30,7 @@ def preprocess_smiles(smiles: str) -> str:
 
 def smiles_to_tokens(smiles: str) -> list:
     # canonicalize SMILES and remove stereochemistry
-    p_smiles = preprocess_smiles(smiles)
+    smiles = preprocess_smiles(smiles)
     tokens = [token for token in SMILES_REGEX.findall(smiles)]
     return tokens
 
