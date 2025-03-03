@@ -6,6 +6,10 @@ from pathlib import Path
 import re
 from rdkit import Chem
 from tokenizers.pre_tokenizers import Whitespace
+from rdkit import RDLogger
+
+RDLogger.DisableLog('rdApp.*')
+
 
 tokenizer_file = "pubchem-canonical/tokenizer/"
 
