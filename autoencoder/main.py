@@ -62,7 +62,7 @@ if __name__ == "__main__":
     val_size = 100_000
     train_size = len(dataset) - val_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-
+    factor = 4 if args.size == 'l' else 1
     model = get_model(args.model, args.size, dataset.tokenizer)
     name = args_to_name(args)
     output_dir = f"res_auto/{name}"
@@ -70,8 +70,8 @@ if __name__ == "__main__":
     training_args = TrainingArguments(
         output_dir=f"./{name}",
         num_train_epochs=10,
-        per_device_train_batch_size=1024,
-        per_device_eval_batch_size=1024,
+        per_device_train_batch_size=1024 // factor,
+        per_device_eval_batch_size=1024 // factor,
         eval_accumulation_steps=1,
         save_total_limit=1,
         save_safetensors=False,
@@ -79,11 +79,11 @@ if __name__ == "__main__":
         evaluation_strategy="steps",
         report_to=["tensorboard"],
         logging_steps=500,
-        save_steps=5000,
-        eval_steps=5000,
+        save_steps=5000 * factor,
+        eval_steps=5000 * factor,
         load_best_model_at_end=True,
         greater_is_better=True,
-        learning_rate=1e-4,
+        learning_rate=1e-4/factor,
         lr_scheduler_type='constant',
         label_names=['labels'],
         seed=42,
