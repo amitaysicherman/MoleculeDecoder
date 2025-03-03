@@ -8,6 +8,8 @@ from rdkit import Chem
 from tokenizers.pre_tokenizers import Whitespace
 from rdkit import RDLogger
 from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor
+
 
 RDLogger.DisableLog('rdApp.*')
 
@@ -47,10 +49,9 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     counter = Counter()
     with open(input_file, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
-
-    for line in tqdm(lines):
-        tokens = process_line(line)
-        counter.update(tokens)
+    with ProcessPoolExecutor() as executor:
+        for tokens in tqdm(executor.map(process_line, lines), total=len(lines)):
+            counter.update(tokens)
 
     vocab = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
     idx = len(vocab)
