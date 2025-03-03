@@ -53,6 +53,7 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         for tokens in tqdm(executor.map(process_line, lines), total=len(lines), desc="Processing SMILES", unit="line"):
             tokens_set.update(set(tokens))
+            print(len(tokens_set),flush=True)
         # with tqdm(total=len(lines), desc="Processing SMILES", unit="line") as pbar:
         #     # Submit tasks in parallel
         #     futures = [executor.submit(process_line, line) for line in lines]
