@@ -1,5 +1,6 @@
 from transformers import BertGenerationDecoder, BertGenerationConfig, BertGenerationEncoder
-from torch import nn
+import torch
+import torch.nn as nn
 from vector_quantize_pytorch import ResidualVQ
 
 
@@ -104,39 +105,6 @@ class VQ(nn.Module):
         return decoder_outputs
 
 
-# class VQVAE(nn.Module):
-#     # combine VQ and VAE
-#     def __init__(self, config_encoder, config_decoder, vq_weight=0.1, codebook_size=512, num_quantizers=8,
-#                  kld_weight=0.1):
-#         super().__init__()
-#         self.encoder = Encoder(config_encoder)
-#         self.decoder = Decoder(config_decoder)
-#         self.vq_weight = vq_weight
-#         self.vq = ResidualVQ(
-#             dim=config_encoder.hidden_size,
-#             num_quantizers=num_quantizers,
-#             codebook_size=codebook_size,
-#         )
-#         self.latent_dim = config_decoder.hidden_size
-#         self.mean = nn.Linear(config_encoder.hidden_size, self.latent_dim)
-#         self.log_var = nn.Linear(config_encoder.hidden_size, self.latent_dim)
-#         self.kld_weight = kld_weight
-#
-#     def forward(self, input_ids, attention_mask, labels, **kwargs):
-#         encoder_output = self.encoder(input_ids, attention_mask)
-#         hidden = encoder_output.squeeze(1)
-#         hidden, indices, commit_loss = self.vq(hidden)
-#         mean = self.mean(hidden)
-#         log_var = self.log_var(hidden)
-#         z = reparameterize(mean, log_var).unsqueeze(1)
-#         decoder_outputs = self.decoder(input_ids, attention_mask,
-#                                        encoder_hidden_states=z,
-#                                        labels=labels)
-#         kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
-#         total_loss = decoder_outputs.loss + self.kld_weight * kl_loss + (commit_loss.mean()) * self.vq_weight
-#         decoder_outputs.loss = total_loss
-#         return decoder_outputs
-
 
 hidden_sizes = {'s': 128, 'm': 512, 'l': 1024}
 num_layers = {'s': 2, 'm': 6, 'l': 12}
@@ -177,14 +145,13 @@ def get_model(name, size, tokenizer):
 if __name__ == "__main__":
     from autoencoder.data import AutoEncoderDataset
     from torch.utils.data import DataLoader
-    import torch
     from torch.optim import AdamW
 
     dataset = AutoEncoderDataset()
     dataset.data = dataset.data[:2]
     dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
     tokenizer = dataset.tokenizer
-    model = get_model('vqvae', 's', tokenizer)
+    model = get_model('vq', 's', tokenizer)
     print(model)
     print(f"Number of parameters: {sum(p.numel() for p in model.parameters()):,}")
     optimizer = AdamW(model.parameters(), lr=1e-4)

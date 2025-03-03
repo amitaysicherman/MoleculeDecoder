@@ -1,9 +1,12 @@
+import os.path
+
 from transformers import Trainer, TrainingArguments
 from torch.utils.data import random_split
 
 from autoencoder.data import AutoEncoderDataset
 from autoencoder.model import get_model
 import numpy as np
+import glob
 
 
 def args_to_name(args):
@@ -33,6 +36,16 @@ def compute_metrics(eval_pred):
         "token_accuracy": token_accuracy,
         "sample_accuracy": sample_accuracy,
     }
+
+
+def check_checkpoint(base_dir):
+    """
+    Check if the base_dir contains a checkpoint
+    """
+    if os.path.exists(base_dir):
+        return bool(glob.glob(f"{base_dir}/checkpoint-*"))
+    else:
+        return False
 
 
 if __name__ == "__main__":
@@ -81,6 +94,4 @@ if __name__ == "__main__":
         eval_dataset=val_dataset,
         compute_metrics=compute_metrics
     )
-    res = trainer.evaluate()
-    print(res)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=check_checkpoint(name))

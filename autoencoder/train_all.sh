@@ -7,7 +7,7 @@
 #SBATCH --array=0-8
 
 
-split_index=$(($SLURM_ARRAY_TASK_ID - 1))
+split_index=$(($SLURM_ARRAY_TASK_ID))
 #models: ae vae vq
 #sizes: s m l
 models_lines=("ae" "vae" "vq" "ae" "vae" "vq" "ae" "vae" "vq")
