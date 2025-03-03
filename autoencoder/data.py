@@ -1,3 +1,5 @@
+import os
+
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerFast
 from tokenizers import Tokenizer, models, processors
@@ -9,7 +11,6 @@ from tokenizers.pre_tokenizers import Whitespace
 from rdkit import RDLogger
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor
-
 
 RDLogger.DisableLog('rdApp.*')
 
@@ -49,6 +50,8 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     counter = Counter()
     with open(input_file, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
+    cpu_count = os.cpu_count()
+    num_workers = min(cpu_count, 32)
     with ProcessPoolExecutor() as executor:
         for tokens in tqdm(executor.map(process_line, lines), total=len(lines)):
             counter.update(tokens)
