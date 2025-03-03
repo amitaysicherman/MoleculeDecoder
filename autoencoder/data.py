@@ -8,8 +8,8 @@ from rdkit import Chem
 from tokenizers.pre_tokenizers import Whitespace
 from rdkit import RDLogger
 from tqdm import tqdm
-RDLogger.DisableLog('rdApp.*')
 
+RDLogger.DisableLog('rdApp.*')
 
 tokenizer_file = "pubchem-canonical/tokenizer/"
 
@@ -28,8 +28,6 @@ def preprocess_smiles(smiles: str) -> str:
 def smiles_to_tokens(smiles: str) -> list:
     # canonicalize SMILES and remove stereochemistry
     p_smiles = preprocess_smiles(smiles)
-    if p_smiles!=smiles:
-        print(f"Canonicalized SMILES from {smiles} to {p_smiles}")
     tokens = [token for token in SMILES_REGEX.findall(smiles)]
     return tokens
 
@@ -38,19 +36,26 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     if Path(tokenizer_file).exists():
         print(f"Loading existing tokenizer from {tokenizer_file}")
         return PreTrainedTokenizerFast.from_pretrained(tokenizer_file)
+
+    from concurrent.futures import ProcessPoolExecutor
+
+    def process_line(line):
+        smiles = line.strip().split()[1]
+        tokens = smiles_to_tokens(smiles)
+        return tokens
+
     counter = Counter()
     with open(input_file, 'r', encoding='utf-8') as f:
-        for line in tqdm(f):
-            smiles = line.strip().split()[1]
-            tokens = smiles_to_tokens(smiles)
-            counter.update(tokens)
+        with ProcessPoolExecutor() as executor:
+            for tokens in tqdm(executor.map(process_line, f)):
+                counter.update(tokens)
+
     vocab = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
     idx = len(vocab)
     for token, count in counter.items():
         vocab[token] = idx
         idx += 1
     print(f"Vocabulary size: {len(vocab)}")
-
 
     tokenizer = Tokenizer(models.WordLevel(vocab=vocab, unk_token="<unk>"))
 
