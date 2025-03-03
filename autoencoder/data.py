@@ -53,12 +53,15 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     cpu_count = os.cpu_count()
     num_workers = min(cpu_count, 8)
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        # Use map to process lines in parallel and wrap it with tqdm for a working progress bar
-        results = list(tqdm(executor.map(process_line, lines), total=len(lines), desc="Processing SMILES", unit="line"))
+        with tqdm(total=len(lines), desc="Processing SMILES", unit="line") as pbar:
+            # Submit tasks in parallel
+            futures = [executor.submit(process_line, line) for line in lines]
 
-    # Update the counter efficiently in bulk
-    for tokens in results:
-        counter.update(tokens)
+            # Process results as they complete
+            for future in futures:
+                tokens = future.result()
+                counter.update(tokens)
+                pbar.update(1)  # Update tqdm manually
     vocab = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
     idx = len(vocab)
     for token, count in counter.items():
