@@ -68,7 +68,7 @@ if __name__ == "__main__":
     output_dir = f"res_auto/{name}"
     log_dir = f"logs_auto/{name}"
     training_args = TrainingArguments(
-        output_dir=f"./{name}",
+        output_dir=output_dir,
         num_train_epochs=10,
         per_device_train_batch_size=1024 // factor,
         per_device_eval_batch_size=1024 // factor,
