@@ -47,6 +47,7 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     tokens_set = set()
     with open(input_file, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
+    print(f"Processing {len(lines)} lines")
     cpu_count = os.cpu_count()
     num_workers = min(cpu_count, 32)
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
