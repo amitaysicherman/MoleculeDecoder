@@ -34,18 +34,15 @@ def smiles_to_tokens(smiles: str) -> list:
     smiles = preprocess_smiles(smiles)
     tokens = [token for token in SMILES_REGEX.findall(smiles)]
     return tokens
-
+def process_line(line):
+    smiles = line.strip().split()[1]
+    tokens = smiles_to_tokens(smiles)
+    return tokens
 
 def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     if Path(tokenizer_file).exists():
         print(f"Loading existing tokenizer from {tokenizer_file}")
         return PreTrainedTokenizerFast.from_pretrained(tokenizer_file)
-
-
-    def process_line(line):
-        smiles = line.strip().split()[1]
-        tokens = smiles_to_tokens(smiles)
-        return tokens
 
     tokens_set = set()
     with open(input_file, 'r', encoding='utf-8') as f:
