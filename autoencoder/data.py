@@ -7,7 +7,7 @@ import re
 from rdkit import Chem
 from tokenizers.pre_tokenizers import Whitespace
 from rdkit import RDLogger
-
+from tqdm import tqdm
 RDLogger.DisableLog('rdApp.*')
 
 
@@ -38,7 +38,7 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
         return PreTrainedTokenizerFast.from_pretrained(tokenizer_file)
     counter = Counter()
     with open(input_file, 'r', encoding='utf-8') as f:
-        for line in f:
+        for line in tqdm(f):
             smiles = line.strip().split()[1]
             tokens = smiles_to_tokens(smiles)
             counter.update(tokens)
