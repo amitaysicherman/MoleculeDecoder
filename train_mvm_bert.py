@@ -15,9 +15,9 @@ from tqdm import tqdm
 RDLogger.DisableLog('rdApp.*')
 
 # Model size configurations
-n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "xxl": 24, "ld": 24}
-n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12, "xxl": 16, "ld": 12}
-ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096, "xxl": 8192, "ld": 4096}
+n_layers = {"xs": 1, "s": 2, "m": 4, "l": 6, "xl": 12, "ld": 24}
+n_heads = {"xs": 1, "s": 2, "m": 4, "l": 8, "xl": 12, "ld": 12}
+ff_dim = {"xs": 256, "s": 512, "m": 1024, "l": 2048, "xl": 4096, "ld": 2048}
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
