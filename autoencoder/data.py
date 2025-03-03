@@ -68,25 +68,26 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     # cpu_count = os.cpu_count()
     # num_workers = min(cpu_count, 32)
 
-    num_workers = os.cpu_count()
-    chunk_size = len(lines) // num_workers  # Divide lines into chunks
-    chunks = [lines[i:i + chunk_size] for i in range(0, len(lines), chunk_size)]
-    temp_files = []
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        with tqdm(total=len(chunks), desc="Processing Chunks", unit="chunk") as pbar:
-            futures = {executor.submit(process_chunk, chunk, i): i for i, chunk in enumerate(chunks)}
-            for future in futures:
-                temp_files.append(future.result())  # Collect intermediate files
-                pbar.update(1)  # Update progress bar
-    final_set = set()
-    with tqdm(total=len(temp_files), desc="Merging Chunks", unit="file") as pbar:
-        for temp_file in temp_files:
-            with open(temp_file, "r") as f:
-                lines = f.read().splitlines()
-                final_set.update(lines)
-            os.remove(temp_file)  # Clean up intermediate file
-            pbar.update(1)
-
+    # num_workers = os.cpu_count()
+    # chunk_size = len(lines) // num_workers  # Divide lines into chunks
+    # chunks = [lines[i:i + chunk_size] for i in range(0, len(lines), chunk_size)]
+    # temp_files = []
+    # with ProcessPoolExecutor(max_workers=num_workers) as executor:
+    #     with tqdm(total=len(chunks), desc="Processing Chunks", unit="chunk") as pbar:
+    #         futures = {executor.submit(process_chunk, chunk, i): i for i, chunk in enumerate(chunks)}
+    #         for future in futures:
+    #             temp_files.append(future.result())  # Collect intermediate files
+    #             pbar.update(1)  # Update progress bar
+    # final_set = set()
+    # with tqdm(total=len(temp_files), desc="Merging Chunks", unit="file") as pbar:
+    #     for temp_file in temp_files:
+    #         with open(temp_file, "r") as f:
+    #             lines = f.read().splitlines()
+    #             final_set.update(lines)
+    #         os.remove(temp_file)  # Clean up intermediate file
+    #         pbar.update(1)
+    with open("tokens.txt") as f:
+        final_set = set(f.read().splitlines())
     # with ProcessPoolExecutor(max_workers=num_workers) as executor:
     #     for tokens in tqdm(executor.map(process_line, lines), total=len(lines), desc="Processing SMILES", unit="line"):
     #         tokens_set.update(set(tokens))
