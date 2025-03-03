@@ -1,36 +1,18 @@
-import os
-
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerFast
 from tokenizers import Tokenizer, models, processors
-from collections import Counter
 from pathlib import Path
 import re
 from rdkit import Chem
 from tokenizers.pre_tokenizers import Whitespace
 from rdkit import RDLogger
 from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor
-import os
-import tempfile
-from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor
 
 RDLogger.DisableLog('rdApp.*')
 
 tokenizer_file = "pubchem-canonical/tokenizer/"
 
 
-def process_chunk(chunk, chunk_id):
-    tokens_set = set()
-    for line in tqdm(chunk):
-        tokens = process_line(line)
-        tokens_set.update(set(tokens))
-    temp_file = f"temp_tokens_{chunk_id}.txt"
-    with open(temp_file, "w") as f:
-        for token in tokens_set:
-            f.write(f"{token}\n")
-    return temp_file
 
 
 def preprocess_smiles(smiles: str) -> str:
@@ -65,42 +47,10 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     with open(input_file, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
     print(f"Processing {len(lines)} lines")
-    # cpu_count = os.cpu_count()
-    # num_workers = min(cpu_count, 32)
-
-    # num_workers = os.cpu_count()
-    # chunk_size = len(lines) // num_workers  # Divide lines into chunks
-    # chunks = [lines[i:i + chunk_size] for i in range(0, len(lines), chunk_size)]
-    # temp_files = []
-    # with ProcessPoolExecutor(max_workers=num_workers) as executor:
-    #     with tqdm(total=len(chunks), desc="Processing Chunks", unit="chunk") as pbar:
-    #         futures = {executor.submit(process_chunk, chunk, i): i for i, chunk in enumerate(chunks)}
-    #         for future in futures:
-    #             temp_files.append(future.result())  # Collect intermediate files
-    #             pbar.update(1)  # Update progress bar
-    # final_set = set()
-    # with tqdm(total=len(temp_files), desc="Merging Chunks", unit="file") as pbar:
-    #     for temp_file in temp_files:
-    #         with open(temp_file, "r") as f:
-    #             lines = f.read().splitlines()
-    #             final_set.update(lines)
-    #         os.remove(temp_file)  # Clean up intermediate file
-    #         pbar.update(1)
-    with open("tokens.txt") as f:
-        final_set = set(f.read().splitlines())
-    # with ProcessPoolExecutor(max_workers=num_workers) as executor:
-    #     for tokens in tqdm(executor.map(process_line, lines), total=len(lines), desc="Processing SMILES", unit="line"):
-    #         tokens_set.update(set(tokens))
-    #         print(len(tokens_set),flush=True)
-    # with tqdm(total=len(lines), desc="Processing SMILES", unit="line") as pbar:
-    #     # Submit tasks in parallel
-    #     futures = [executor.submit(process_line, line) for line in lines]
-    #
-    #     # Process results as they complete
-    #     for future in futures:
-    #         tokens = future.result()
-    #         tokens_set.update(set(tokens))
-    #         pbar.update(1)  # Update tqdm manually
+    final_set = set()
+    for line in tqdm(lines):
+        tokens = process_line(line)
+        final_set.update(set(tokens))
     vocab = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
     idx = len(vocab)
     for token in final_set:
