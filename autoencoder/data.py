@@ -7,6 +7,7 @@ from rdkit import Chem
 from tokenizers.pre_tokenizers import Whitespace
 from rdkit import RDLogger
 from tqdm import tqdm
+import random
 
 RDLogger.DisableLog('rdApp.*')
 
@@ -81,6 +82,12 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     return wrapped_tokenizer
 
 
+def line_to_tokens(line):
+    _, smiles = line.strip().split()
+    tokens = smiles_to_tokens(smiles)
+    return tokens
+
+
 class AutoEncoderDataset(Dataset):
     def __init__(self, input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi", max_length=75):
         self.tokenizer = get_tokenizer(input_file)
@@ -93,10 +100,12 @@ class AutoEncoderDataset(Dataset):
 
     def __getitem__(self, idx):
         line = self.data[idx]
-        _, smiles = line.strip().split()
-        tokens = smiles_to_tokens(smiles)
-        if len(tokens) > self.max_length:
-            return self.__getitem__((idx + 1) % len(self.data))
+        tokens = line_to_tokens(line)
+        while len(tokens) > self.max_length:
+            idx = random.randint(0, len(self.data) - 1)
+            line = self.data[idx]
+            tokens = line_to_tokens(line)
+
         source = " ".join(tokens)
 
         source_encoding = self.tokenizer(
