@@ -46,11 +46,11 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
 
     counter = Counter()
     with open(input_file, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-    print(f"Processing {len(lines)} lines")
-    with ProcessPoolExecutor(max_workers=32) as executor:
-        for tokens in tqdm(executor.map(process_line, lines), total=len(lines)):
-            counter.update(tokens)
+        lines = f.read().splitlines()
+
+    for line in tqdm(lines):
+        tokens = process_line(line)
+        counter.update(tokens)
 
     vocab = {"<pad>": 0, "<unk>": 1, "<bos>": 2, "<eos>": 3}
     idx = len(vocab)
