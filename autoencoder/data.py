@@ -69,7 +69,7 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     # cpu_count = os.cpu_count()
     # num_workers = min(cpu_count, 32)
 
-    num_workers = min(32, os.cpu_count())  # Use up to 32 CPU cores or max available
+    num_workers = os.cpu_count()
     chunk_size = len(lines) // num_workers  # Divide lines into chunks
     chunks = [lines[i:i + chunk_size] for i in range(0, len(lines), chunk_size)]
     temp_files = []
