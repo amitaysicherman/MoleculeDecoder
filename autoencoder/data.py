@@ -48,7 +48,7 @@ def get_tokenizer(input_file="pubchem-canonical/CID-SMILES-CANONICAL.smi"):
     with open(input_file, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
     cpu_count = os.cpu_count()
-    num_workers = min(cpu_count, 8)
+    num_workers = min(cpu_count, 32)
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         for tokens in tqdm(executor.map(process_line, lines), total=len(lines), desc="Processing SMILES", unit="line"):
             tokens_set.update(set(tokens))
