@@ -78,8 +78,10 @@ class AutoEncoderDataset(Dataset):
         self.data = []
         with open(input_file, 'r', encoding='utf-8') as f:
             for line in f:
-                cid, smiles = line.strip().split()
+                _, smiles = line.strip().split()
                 tokens = smiles_to_tokens(smiles)
+                if len(tokens) > max_length:
+                    continue
                 self.data.append(" ".join(tokens))
 
     def __len__(self):
