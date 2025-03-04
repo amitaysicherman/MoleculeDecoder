@@ -122,7 +122,6 @@ class MVM(nn.Module):
         flat_mol_attention_mask = mol_attention_mask.view(-1) == 1  # (batch_size * max_seq_len)
         flat_input_ids = flat_input_ids[flat_mol_attention_mask]
         flat_attention_mask = flat_attention_mask[flat_mol_attention_mask]
-
         chunk_size = 2048  # Adjust based on your GPU memory
         all_embeddings = []
         for i in range(0, flat_input_ids.size(0), chunk_size):
@@ -134,17 +133,9 @@ class MVM(nn.Module):
                     attention_mask=chunk_attention_mask
                 )
                 all_embeddings.append(outputs.squeeze(1))
-
         embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
-        # final_emb = self.pad_embedding.expand(flat_mol_attention_mask.size(0), -1).clone()
         final_emb = torch.zeros(flat_mol_attention_mask.size(0), embeddings.size(-1), device=embeddings.device)
         final_emb[flat_mol_attention_mask.nonzero(as_tuple=True)[0]] = embeddings
-
-        # index_counter = 0
-        # for i, m_values in enumerate(flat_mol_attention_mask):
-        #     if m_values:
-        #         final_emb[i] = embeddings[index_counter]
-        #         index_counter += 1
         final_emb = final_emb.view(batch_size, max_seq_len, -1)
         return final_emb
 
