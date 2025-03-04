@@ -259,7 +259,8 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
         compute_metrics=lambda x: compute_metrics(x)
     )
 
-    model.load_state_dict(torch.load(get_last_cp(f"res_auto_mvm/{output_suf}/get_last_cp"), map_location=device))
+    model.load_state_dict(
+        torch.load(f"{get_last_cp(f'res_auto_mvm/{output_suf}/get_last_cp')}/pytorch_model.bin", map_location=device))
 
     print(trainer.evaluate())
     trainer.train(resume_from_checkpoint=get_last_cp(f"res_auto_mvm/{output_suf}") is not None)
