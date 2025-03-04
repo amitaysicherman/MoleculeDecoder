@@ -279,6 +279,7 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
         eval_dataset={"validation": val_dataset,"train": train_subset},
         compute_metrics=lambda x: compute_metrics(x, debug=debug)
     )
+    print(trainer.evaluate())
     trainer.train(resume_from_checkpoint=check_checkpoint(f"results_mvm_bert/{output_suf}"))
 
 
