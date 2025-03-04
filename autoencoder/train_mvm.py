@@ -204,11 +204,15 @@ def compute_metrics(eval_pred):
     }
 
 
-def check_checkpoint(base_dir):
-    if os.path.exists(base_dir):
-        return bool(glob.glob(f"{base_dir}/checkpoint-*"))
-    else:
-        return False
+def get_last_cp(base_dir):
+    if not os.path.exists(base_dir):
+        return None
+    all_checkpoints = glob.glob(f"{base_dir}/checkpoint-*")
+    if not all_checkpoints:
+        return None
+    cp_steps = [int(cp.split("-")[-1]) for cp in all_checkpoints]
+    last_cp = max(cp_steps)
+    return f"{base_dir}/checkpoint-{last_cp}"
 
 
 def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
@@ -254,15 +258,11 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
         eval_dataset={'validation': val_dataset, "train": train_subset},
         compute_metrics=lambda x: compute_metrics(x)
     )
+
+    model.load_state_dict(torch.load(get_last_cp(f"res_auto_mvm/{output_suf}/get_last_cp"), map_location=device))
+
     print(trainer.evaluate())
-    trainer.train(resume_from_checkpoint=check_checkpoint(f"res_auto_mvm/{output_suf}"))
-
-
-def get_last_cp(base_dir):
-    all_checkpoints = glob.glob(f"{base_dir}/checkpoint-*")
-    cp_steps = [int(cp.split("-")[-1]) for cp in all_checkpoints]
-    last_cp = max(cp_steps)
-    return f"{base_dir}/checkpoint-{last_cp}"
+    trainer.train(resume_from_checkpoint=get_last_cp(f"res_auto_mvm/{output_suf}") is not None)
 
 
 if __name__ == "__main__":
