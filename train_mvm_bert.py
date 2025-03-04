@@ -13,6 +13,7 @@ from rdkit import RDLogger
 from tqdm import tqdm
 import glob
 import random
+
 RDLogger.DisableLog('rdApp.*')
 
 # Model size configurations
@@ -224,11 +225,17 @@ def compute_metrics(eval_pred, debug=False):
         "sample_accuracy": sample_accuracy,
     }
 
-def check_checkpoint(base_dir):
-    if os.path.exists(base_dir):
-        return bool(glob.glob(f"{base_dir}/checkpoint-*"))
-    else:
-        return False
+
+def get_last_cp(base_dir):
+    if not os.path.exists(base_dir):
+        return None
+    all_checkpoints = glob.glob(f"{base_dir}/checkpoint-*")
+    if not all_checkpoints:
+        return None
+    cp_steps = [int(cp.split("-")[-1]) for cp in all_checkpoints]
+    last_cp = max(cp_steps)
+    return f"{base_dir}/checkpoint-{last_cp}"
+
 
 def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, train_all=False):
     train_dataset = ReactionMolsDataset(split="train", debug=debug)
@@ -276,11 +283,14 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
         model=model,
         args=train_args,
         train_dataset=train_dataset,
-        eval_dataset={"validation": val_dataset,"train": train_subset},
+        eval_dataset={"validation": val_dataset, "train": train_subset},
         compute_metrics=lambda x: compute_metrics(x, debug=debug)
     )
+    model.load_state_dict(
+        torch.load(get_last_cp(f"results_mvm_bert/{output_suf}") + "/pytorch_model.bin", map_location=device))
+
     print(trainer.evaluate())
-    trainer.train(resume_from_checkpoint=check_checkpoint(f"results_mvm_bert/{output_suf}"))
+    trainer.train(resume_from_checkpoint=get_last_cp(f"results_mvm_bert/{output_suf}") is not None)
 
 
 # run main to test dataset
