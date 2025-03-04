@@ -11,6 +11,7 @@ from transformers import BertConfig, BertModel
 from tqdm import tqdm
 import random
 from autoencoder.data import smiles_to_tokens, get_tokenizer
+import glob
 
 hidden_sizes = {'s': 128, 'm': 512, 'l': 1024}
 num_layers = {'s': 2, 'm': 6, 'l': 12}
@@ -197,7 +198,6 @@ def compute_metrics(eval_pred):
     predictions = predictions[:, :-1]
     labels = labels[:, 1:]
 
-
     mask = labels != -100
     total_tokens = mask.sum()
     correct_tokens = ((predictions == labels) & mask).sum()
@@ -260,7 +260,12 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
     trainer.train(resume_from_checkpoint=False)
 
 
-# run main to test dataset
+def get_last_cp(base_dir):
+    all_checkpoints = glob.glob(f"{base_dir}/checkpoint-*")
+    cp_steps = [int(cp.split("-")[-1]) for cp in all_checkpoints]
+    last_cp = max(cp_steps)
+    return f"{base_dir}/checkpoint-{last_cp}"
+
 
 if __name__ == "__main__":
     import argparse
@@ -278,7 +283,7 @@ if __name__ == "__main__":
 
     tokenizer = get_tokenizer()
     model = get_model('ae', "m", tokenizer)
-    state_dict = torch.load("res_auto/ae_m/checkpoint-35000/pytorch_model.bin", map_location=torch.device('cpu'))
+    state_dict = torch.load(f"{get_last_cp('res_auto/ae_m')}/pytorch_model.bin", map_location=torch.device('cpu'))
     model.load_state_dict(state_dict, strict=True)
     encoder = model.encoder
     encoder.eval().to(device)
