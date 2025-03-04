@@ -244,6 +244,7 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
         load_best_model_at_end=True,
         save_safetensors=False,
         gradient_accumulation_steps=1,
+        metric_for_best_model="eval_validation_token_accuracy",
         report_to="tensorboard",
         learning_rate=lr,
         lr_scheduler_type='constant',

@@ -270,6 +270,7 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
         eval_steps=500,
         save_total_limit=1,
         load_best_model_at_end=True,
+        metric_for_best_model="eval_validation_token_accuracy",
         save_safetensors=False,
         gradient_accumulation_steps=1,
         report_to="none" if debug else "tensorboard",
