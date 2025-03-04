@@ -1,14 +1,11 @@
-# Molecule vector model with PyTorch transformer
 import torch
 from torch import nn
 from torch.utils.data import Dataset
-from transformers import AutoTokenizer, AutoModel, TrainingArguments, Trainer
+from transformers import TrainingArguments, Trainer
 import os
 from torch.nn import functional as F
-from train_decoder import create_model
 import numpy as np
 from transformers import BertConfig, BertModel
-from tqdm import tqdm
 import random
 from autoencoder.data import smiles_to_tokens, get_tokenizer
 import glob
@@ -112,7 +109,7 @@ class MVM(nn.Module):
         self.bert_model = BertModel(config)
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size), requires_grad=True)
-        self.pad_embedding = nn.Parameter(torch.randn(config.hidden_size), requires_grad=True)
+        # self.pad_embedding = nn.Parameter(torch.zeros(config.hidden_size), requires_grad=False)
 
     def get_mol_embeddings(self, input_ids, token_attention_mask, mol_attention_mask):
         """
@@ -139,12 +136,15 @@ class MVM(nn.Module):
                 all_embeddings.append(outputs.squeeze(1))
 
         embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
-        final_emb = self.pad_embedding.expand(flat_mol_attention_mask.size(0), -1).clone()
-        index_counter = 0
-        for i, m_values in enumerate(flat_mol_attention_mask):
-            if m_values:
-                final_emb[i] = embeddings[index_counter]
-                index_counter += 1
+        # final_emb = self.pad_embedding.expand(flat_mol_attention_mask.size(0), -1).clone()
+        final_emb = torch.zeros(flat_mol_attention_mask.size(0), embeddings.size(-1), device=embeddings.device)
+        final_emb[flat_mol_attention_mask.nonzero(as_tuple=True)[0]] = embeddings
+
+        # index_counter = 0
+        # for i, m_values in enumerate(flat_mol_attention_mask):
+        #     if m_values:
+        #         final_emb[i] = embeddings[index_counter]
+        #         index_counter += 1
         final_emb = final_emb.view(batch_size, max_seq_len, -1)
         return final_emb
 
@@ -226,12 +226,12 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
     output_suf = f"{size}_{lr}_{alpha}"
     os.makedirs(f"res_auto_mvm/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
-        output_dir=f"results_mvm_bert/{output_suf}",
+        output_dir=f"res_auto_mvm/{output_suf}",
         num_train_epochs=num_epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         eval_accumulation_steps=10,
-        logging_dir=f"res_auto_mvm/{output_suf}",
+        logging_dir=f"logs_auto_mvm/{output_suf}",
         logging_steps=100,
         save_steps=500,
         evaluation_strategy="steps",
