@@ -287,10 +287,10 @@ def main(debug=False, batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0
         eval_dataset={"validation": val_dataset, "train": train_subset},
         compute_metrics=lambda x: compute_metrics(x, debug=debug)
     )
-    model.load_state_dict(
-        torch.load(get_last_cp(f"results_mvm_bert/{output_suf}") + "/pytorch_model.bin", map_location=device))
-
-    print(trainer.evaluate())
+    # model.load_state_dict(
+    #     torch.load(get_last_cp(f"results_mvm_bert/{output_suf}") + "/pytorch_model.bin", map_location=device))
+    #
+    # print(trainer.evaluate())
     trainer.train(resume_from_checkpoint=get_last_cp(f"results_mvm_bert/{output_suf}") is not None)
 
 
