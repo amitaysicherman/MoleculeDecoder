@@ -204,9 +204,18 @@ def compute_metrics(eval_pred):
     }
 
 
+def check_checkpoint(base_dir):
+    if os.path.exists(base_dir):
+        return bool(glob.glob(f"{base_dir}/checkpoint-*"))
+    else:
+        return False
+
+
 def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
     train_dataset = ReactionMolsDataset(split="train")
     val_dataset = ReactionMolsDataset(split="valid")
+    train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
+    train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
     config = size_to_config(size)
     model = MVM(config=config, alpha=alpha)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -230,8 +239,6 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
         save_total_limit=1,
         load_best_model_at_end=True,
         save_safetensors=False,
-        # metric_for_best_model="eval_loss",
-        greater_is_better=False,
         gradient_accumulation_steps=1,
         report_to="tensorboard",
         learning_rate=lr,
@@ -244,11 +251,11 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
         model=model,
         args=train_args,
         train_dataset=train_dataset,
-        eval_dataset=val_dataset,
+        eval_dataset={'validation': val_dataset, "train": train_subset},
         compute_metrics=lambda x: compute_metrics(x)
     )
-
-    trainer.train(resume_from_checkpoint=False)
+    print(trainer.evaluate())
+    trainer.train(resume_from_checkpoint=check_checkpoint(f"res_auto_mvm/{output_suf}"))
 
 
 def get_last_cp(base_dir):
