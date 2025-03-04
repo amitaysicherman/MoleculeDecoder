@@ -10,8 +10,8 @@ import random
 from autoencoder.data import smiles_to_tokens, get_tokenizer
 import glob
 
-hidden_sizes = {'s': 128, 'm': 512, 'l': 1024}
-num_layers = {'s': 2, 'm': 6, 'l': 12}
+hidden_sizes = {'s': 128, 'm': 512, 'l': 512}
+num_layers = {'s': 2, 'm': 6, 'l': 24}
 num_heads = {'s': 2, 'm': 4, 'l': 8}
 
 # if mps use mps, else if gpu use gpu, else use cpu
@@ -29,8 +29,8 @@ def size_to_config(size, hidden_size=512):
         hidden_size=hidden_size,
         num_hidden_layers=num_layers[size],
         num_attention_heads=num_heads[size],
-        intermediate_size=hidden_sizes[size],
-        max_position_embeddings=512,
+        intermediate_size=hidden_sizes[size]*4,
+        max_position_embeddings=15,
     )
     return config
 
