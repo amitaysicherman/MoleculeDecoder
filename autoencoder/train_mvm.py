@@ -30,28 +30,36 @@ def size_to_config(size, hidden_size=512):
         num_hidden_layers=num_layers[size],
         num_attention_heads=num_heads[size],
         intermediate_size=hidden_sizes[size] * 4,
-        max_position_embeddings=15,
+        max_position_embeddings=25,
     )
     return config
 
 
 class ReactionMolsDataset(Dataset):
-    def __init__(self, base_dir="USPTO", split="train", max_mol_len=75, max_len=10):
+    def __init__(self, base_dir="USPTO", split="train", max_mol_len=75, max_len=10,skip_unk=True):
         self.max_len = max_len
         self.max_mol_len = max_mol_len
-
-        with open(f"{base_dir}/src-{split}.txt") as f:
-            self.src = f.read().splitlines()
-        with open(f"{base_dir}/tgt-{split}.txt") as f:
-            self.tgt = f.read().splitlines()
+        self.skip_unk = skip_unk
+        with open(f"{base_dir}/reactants-{split}.txt") as f:
+            self.reactants = f.read().splitlines()
+        with open(f"{base_dir}/products-{split}.txt") as f:
+            self.products = f.read().splitlines()
+        with open(f"{base_dir}/reagents-{split}.txt") as f:
+            self.reagents = f.read().splitlines()
 
         self.tokenizer = get_tokenizer()
         self.empty = {"input_ids": torch.tensor([self.tokenizer.pad_token_id] * 75),
                       "attention_mask": torch.tensor([0] * 75)}
 
     def preprocess_line(self, line):
-        line = line.replace("~", "-")  # replace unknown bond type with single covalent bond
-        mols = line.strip().replace(" ", "").split(".")
+        if line == "":
+            return {
+                'input_ids': torch.zeros(self.max_len, self.max_mol_len,
+                                         dtype=torch.long) + self.tokenizer.pad_token_id,
+                'token_attention_mask': torch.zeros(self.max_len, self.max_mol_len, dtype=torch.long),
+                'mol_attention_mask': torch.zeros(self.max_len, dtype=torch.long)
+            }
+        mols = line.strip().split(".")
         if len(mols) > self.max_len:
             return None
         mols = [smiles_to_tokens(s) for s in mols]
@@ -61,18 +69,10 @@ class ReactionMolsDataset(Dataset):
             return None
         mols = [" ".join(m) for m in mols]
         tokens = [self.tokenizer.encode(m, max_length=self.max_mol_len) for m in mols]
-        # is unknown token in any of the tokens print the mol
-        if any([self.tokenizer.unk_token_id in t['input_ids'] for t in tokens]):
-            for m, t in zip(mols, tokens):
-                if self.tokenizer.unk_token_id in t['input_ids']:
-                    print()
-                    print("--------------------")
-                    print(m)
-                    print(self.tokenizer.decode(t['input_ids'].detach().cpu().numpy().tolist()[0],
-                                                skip_special_tokens=False))
-                    print("--------------------")
-                    print()
-
+        if self.skip_unk:
+            if any([self.tokenizer.unk_token_id in t['input_ids'] for t in tokens]):
+                print("Skipping UNK")
+                return None
         num_mols = len(tokens)
         attention_mask = torch.zeros(self.max_len, dtype=torch.long)
         attention_mask[:num_mols] = 1
@@ -87,28 +87,33 @@ class ReactionMolsDataset(Dataset):
         }
 
     def __getitem__(self, idx):
-        src, tgt = self.src[idx], self.tgt[idx]
+        reactants, products, reagents = self.reactants[idx], self.products[idx], self.reagents[idx]
+
         continue_run = True
         while continue_run:
-            src_tokens = self.preprocess_line(src)
-            tgt_tokens = self.preprocess_line(tgt)
-            if src_tokens is None or tgt_tokens is None:
-                idx = random.randint(0, len(self.src) - 1)
-                src, tgt = self.src[idx], self.tgt[idx]
-            else:
+            reactants_tokens = self.preprocess_line(reactants)
+            products_tokens = self.preprocess_line(products)
+            reagents_tokens = self.preprocess_line(reagents)
+            if reactants_tokens is not None and products_tokens is not None and reagents_tokens is not None:
                 continue_run = False
+            else:
+                idx = random.randint(0, len(self.reactants) - 1)
+                reactants, products, reagents = self.reactants[idx], self.products[idx], self.reagents[idx]
 
         return {
-            'src_input_ids': src_tokens['input_ids'],  # (max_seq_len, 75)
-            'src_token_attention_mask': src_tokens['token_attention_mask'],  # (max_seq_len, 75)
-            'src_mol_attention_mask': src_tokens['mol_attention_mask'],  # (max_seq_len,)
-            'tgt_input_ids': tgt_tokens['input_ids'],  # (max_seq_len, 75)
-            'tgt_token_attention_mask': tgt_tokens['token_attention_mask'],  # (max_seq_len, 75)
-            'tgt_mol_attention_mask': tgt_tokens['mol_attention_mask'],  # (max_seq_len,)
+            'reactants_input_ids': reactants_tokens['input_ids'],
+            'reactants_token_attention_mask': reactants_tokens['token_attention_mask'],
+            'reactants_mol_attention_mask': reactants_tokens['mol_attention_mask'],
+            'products_input_ids': products_tokens['input_ids'],
+            'products_token_attention_mask': products_tokens['token_attention_mask'],
+            'products_mol_attention_mask': products_tokens['mol_attention_mask'],
+            'reagents_input_ids': reagents_tokens['input_ids'],
+            'reagents_token_attention_mask': reagents_tokens['token_attention_mask'],
+            'reagents_mol_attention_mask': reagents_tokens['mol_attention_mask'],
         }
 
     def __len__(self):
-        return len(self.src)
+        return len(self.reactants)
 
 
 class MVM(nn.Module):
@@ -120,6 +125,7 @@ class MVM(nn.Module):
         self.bert_model = BertModel(config)
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size), requires_grad=True)
+        self.sep_token = nn.Parameter(torch.randn(1, 1, config.hidden_size), requires_grad=True)
         # self.pad_embedding = nn.Parameter(torch.zeros(config.hidden_size), requires_grad=False)
 
     def get_mol_embeddings(self, input_ids, token_attention_mask, mol_attention_mask):
@@ -150,28 +156,33 @@ class MVM(nn.Module):
         final_emb = final_emb.view(batch_size, max_seq_len, -1)
         return final_emb
 
-    def forward(self, src_input_ids, src_token_attention_mask, src_mol_attention_mask,
-                tgt_input_ids, tgt_token_attention_mask, tgt_mol_attention_mask):
-        src_embeddings = self.get_mol_embeddings(src_input_ids, src_token_attention_mask, src_mol_attention_mask)
+    def forward(self, reactants_input_ids, reactants_token_attention_mask, reactants_mol_attention_mask,
+                products_input_ids, products_token_attention_mask, products_mol_attention_mask,
+                reagents_input_ids, reagents_token_attention_mask, reagents_mol_attention_mask):
+        reactants_embeddings = self.get_mol_embeddings(reactants_input_ids, reactants_token_attention_mask,
+                                                       reactants_mol_attention_mask)
+        reagents_embeddings = self.get_mol_embeddings(reagents_input_ids, reagents_token_attention_mask,
+                                                      reagents_mol_attention_mask)
 
-        # add self.cls_token to src_embeddings in the first position
-        src_embeddings = torch.cat([self.cls_token.expand(src_embeddings.size(0), -1, -1), src_embeddings], dim=1)
-
-        # Convert mol_attention_mask to proper format if needed
+        cls = self.cls_token.expand(reactants_embeddings.size(0), -1, -1)
+        sep = self.sep_token.expand(reactants_embeddings.size(0), -1, -1)
+        src_embeddings = torch.cat([cls, reactants_embeddings, sep, reagents_embeddings], dim=1)
+        ones_mask = torch.ones(src_embeddings.size(0), 1, device=src_embeddings.device)
+        src_mol_attention_mask = torch.cat(
+            [ones_mask, reactants_mol_attention_mask, ones_mask, reagents_mol_attention_mask], dim=1)
         src_seq_mask = src_mol_attention_mask.float()
-        # Add cls token to src_seq_mask
-        src_seq_mask = torch.cat([torch.ones(src_seq_mask.size(0), 1).to(src_seq_mask.device), src_seq_mask], dim=1)
         output = self.bert_model(inputs_embeds=src_embeddings, attention_mask=src_seq_mask)
         bert_predict = output['pooler_output']
 
-        gt_tgt_embeddings = self.get_mol_embeddings(tgt_input_ids, tgt_token_attention_mask, tgt_mol_attention_mask)
+        gt_tgt_embeddings = self.get_mol_embeddings(products_input_ids, products_token_attention_mask,
+                                                    products_mol_attention_mask)
         gt_tgt_embeddings = gt_tgt_embeddings[:, 0, :]
         loss = F.mse_loss(bert_predict, gt_tgt_embeddings)
 
-        tgt_input_ids_decoder = tgt_input_ids[:, 0].clone()
-        tgt_input_ids_decoder_mask = tgt_token_attention_mask[:, 0]
+        tgt_input_ids_decoder = products_input_ids[:, 0].clone()
+        tgt_input_ids_decoder_mask = products_token_attention_mask[:, 0]
         labels = tgt_input_ids_decoder.clone()
-        labels_mask = tgt_token_attention_mask[:, 0]
+        labels_mask = products_token_attention_mask[:, 0]
         labels[labels_mask == 0] = -100
 
         decoder_output = decoder(tgt_input_ids_decoder, tgt_input_ids_decoder_mask,
@@ -259,7 +270,7 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
         report_to="tensorboard",
         learning_rate=lr,
         lr_scheduler_type='constant',
-        label_names=['tgt_input_ids', 'tgt_token_attention_mask', 'tgt_mol_attention_mask'],
+        label_names=['products_input_ids', 'products_token_attention_mask', 'products_mol_attention_mask'],
         seed=42,
         save_only_model=True,
     )
