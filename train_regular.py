@@ -30,26 +30,21 @@ class TranslationDataset(Dataset):
     def __getitem__(self, idx):
         reac = self.reactants[idx]
         reag = self.reagents[idx]
-        source = f"{reac} > {reag}"
+        source = f"{reac} .. {reag}"
         target = self.products[idx]
 
         source_tokens = " ".join(smiles_to_tokens(source))
-        print("source_tokens", source_tokens)
         target_tokens = " ".join(smiles_to_tokens(target))
-        print("target_tokens", target_tokens)
         source_encoding = self.tokenizer.encode(
             source_tokens,
             max_length=self.max_length,
         )
-        print("source_encoding", source_encoding)
         target_encoding = self.tokenizer.encode(
             target_tokens,
             max_length=self.max_length,
         )
-        print("target_encoding", target_encoding)
         label = target_encoding['input_ids'].clone()
         label[label == self.tokenizer.pad_token_id] = -100
-        print("label", label)
         return {
             'input_ids': source_encoding['input_ids'],
             'attention_mask': source_encoding['attention_mask'],
