@@ -143,14 +143,14 @@ def get_model(name, size, tokenizer):
         raise ValueError(f"Unknown model name: {name}")
 
 if __name__ == "__main__":
-    from autoencoder.data import AutoEncoderDataset
+    from autoencoder.data import AutoEncoderDataset,get_tokenizer
     from torch.utils.data import DataLoader
     from torch.optim import AdamW
 
     dataset = AutoEncoderDataset()
     dataset.data = dataset.data[:2]
     dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
-    tokenizer = dataset.tokenizer
+    tokenizer = get_tokenizer()
     model = get_model('vq', 's', tokenizer)
     print(model)
     print(f"Number of parameters: {sum(p.numel() for p in model.parameters()):,}")

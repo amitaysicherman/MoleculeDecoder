@@ -29,7 +29,7 @@ def size_to_config(size, hidden_size=512):
         hidden_size=hidden_size,
         num_hidden_layers=num_layers[size],
         num_attention_heads=num_heads[size],
-        intermediate_size=hidden_sizes[size]*4,
+        intermediate_size=hidden_sizes[size] * 4,
         max_position_embeddings=15,
     )
     return config
@@ -50,6 +50,7 @@ class ReactionMolsDataset(Dataset):
                       "attention_mask": torch.tensor([0] * 75)}
 
     def preprocess_line(self, line):
+        line = line.replace("~", "-")  # replace unknown bond type with single covalent bond
         mols = line.strip().replace(" ", "").split(".")
         if len(mols) > self.max_len:
             return None
@@ -59,9 +60,19 @@ class ReactionMolsDataset(Dataset):
         if any([len(s) > self.max_mol_len for s in mols]):
             return None
         mols = [" ".join(m) for m in mols]
-        tokens = [
-            self.tokenizer(m, padding="max_length", truncation=True, max_length=self.max_mol_len, return_tensors="pt")
-            for m in mols]
+        tokens = [self.tokenizer.encode(m, max_length=self.max_mol_len) for m in mols]
+        # is unknown token in any of the tokens print the mol
+        if any([self.tokenizer.unk_token_id in t['input_ids'] for t in tokens]):
+            for m, t in zip(mols, tokens):
+                if self.tokenizer.unk_token_id in t['input_ids']:
+                    print()
+                    print("--------------------")
+                    print(m)
+                    print(self.tokenizer.decode(t['input_ids'].detach().cpu().numpy().tolist()[0],
+                                                skip_special_tokens=False))
+                    print("--------------------")
+                    print()
+
         num_mols = len(tokens)
         attention_mask = torch.zeros(self.max_len, dtype=torch.long)
         attention_mask[:num_mols] = 1
@@ -279,7 +290,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     from autoencoder.model import get_model
-    from autoencoder.data import get_tokenizer
 
     tokenizer = get_tokenizer()
     model = get_model('ae', "m", tokenizer)
