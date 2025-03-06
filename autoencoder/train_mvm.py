@@ -15,10 +15,10 @@ num_layers = {'s': 2, 'm': 6, 'l': 24}
 num_heads = {'s': 2, 'm': 4, 'l': 8}
 
 # if mps use mps, else if gpu use gpu, else use cpu
-if torch.mps.is_available():
-    device = torch.device("mps")
-elif torch.cuda.is_available():
+if torch.cuda.is_available():
     device = torch.device("cuda")
+elif torch.mps.is_available():
+    device = torch.device("mps")
 else:
     device = torch.device("cpu")
 
