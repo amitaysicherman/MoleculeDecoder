@@ -261,10 +261,8 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5):
         logging_steps=100,
         save_steps=500,
         evaluation_strategy="steps",
-        warmup_steps=2000,
         eval_steps=500,
         save_total_limit=1,
-        weight_decay=0.01,
         load_best_model_at_end=True,
         save_safetensors=False,
         gradient_accumulation_steps=1,
@@ -295,10 +293,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--batch_size", type=int, default=1024)
     parser.add_argument("--num_epochs", type=int, default=100)
-    parser.add_argument("--lr", type=float, default=2e-4)
-    parser.add_argument("--size", type=str, default="m")
+    parser.add_argument("--lr", type=float, default=0.0001)
+    parser.add_argument("--size", type=str, default="s")
     parser.add_argument("--alpha", type=float, default=0.0)
     args = parser.parse_args()
 
