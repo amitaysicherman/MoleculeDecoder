@@ -120,6 +120,8 @@ def main(retro=False):
         load_best_model_at_end=True,
         eval_steps=1000,
         metric_for_best_model="eval_token_accuracy",
+        save_only_model=True,
+        save_safetensors=False,
     )
 
     # Initialize trainer
