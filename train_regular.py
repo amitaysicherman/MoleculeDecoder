@@ -147,7 +147,7 @@ def main(retro=False):
     # print(score)
 
     # Train the model
-    trainer.train(get_last_cp(f"./results_{name_suffix}") is not None)
+    trainer.train(resume_from_checkpoint=get_last_cp(f"./results_{name_suffix}") is not None)
 
 
 
