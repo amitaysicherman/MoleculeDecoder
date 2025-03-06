@@ -130,7 +130,6 @@ def main(retro=False):
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        tokenizer=tokenizer,
         compute_metrics=compute_metrics
     )
     score = trainer.evaluate()
@@ -139,9 +138,6 @@ def main(retro=False):
     # Train the model
     trainer.train()
 
-    # Save the model and tokenizer
-    trainer.save_model("./final_model")
-    tokenizer.save_pretrained("./final_model")
 
 
 if __name__ == "__main__":
