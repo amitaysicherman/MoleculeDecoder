@@ -66,6 +66,17 @@ def compute_metrics(eval_pred):
         "perfect_match_accuracy": perfect_match_accuracy,
         "token_accuracy": token_accuracy
     }
+import os
+import glob
+def get_last_cp(base_dir):
+    if not os.path.exists(base_dir):
+        return None
+    all_checkpoints = glob.glob(f"{base_dir}/checkpoint-*")
+    if not all_checkpoints:
+        return None
+    cp_steps = [int(cp.split("-")[-1]) for cp in all_checkpoints]
+    last_cp = max(cp_steps)
+    return f"{base_dir}/checkpoint-{last_cp}"
 
 
 def main(retro=False):
@@ -132,11 +143,11 @@ def main(retro=False):
         eval_dataset=eval_dataset,
         compute_metrics=compute_metrics
     )
-    score = trainer.evaluate()
-    print(score)
+    # score = trainer.evaluate()
+    # print(score)
 
     # Train the model
-    trainer.train()
+    trainer.train(get_last_cp(f"./results_{name_suffix}") is not None)
 
 
 
