@@ -264,7 +264,7 @@ def get_last_cp(base_dir):
 
 
 def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molformer=False, train_encoder=False,
-         train_decoder=False):
+         train_decoder=False, cp=None):
     train_dataset = ReactionMolsDataset(split="train", is_molformer=use_molformer)
     val_dataset = ReactionMolsDataset(split="valid", is_molformer=use_molformer)
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
@@ -320,7 +320,13 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
 
     # Initialize MVM model with encoder and decoder
     model = MVM(config=config, alpha=alpha, is_molformer=use_molformer, encoder=encoder, decoder=decoder)
-
+    if cp is not None:
+        last_cp = get_last_cp(cp)
+        if last_cp is None:
+            raise ValueError("Checkpoint path does not exist")
+        model_file = f"{last_cp}/pytorch_model.bin"
+        model.load_state_dict(torch.load(model_file, map_location=device))
+        print(f"Loaded model from {model_file}")
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
     total_params = trainable_params + non_trainable_params
@@ -387,6 +393,7 @@ if __name__ == "__main__":
     parser.add_argument("--molformer", action="store_true")
     parser.add_argument("--train_encoder", action="store_true", help="Enable training of the encoder")
     parser.add_argument("--train_decoder", action="store_true", help="Enable training of the decoder")
+    parser.add_argument("--cp", type=str, default=None)
     args = parser.parse_args()
 
     main(
@@ -397,5 +404,6 @@ if __name__ == "__main__":
         args.alpha,
         args.molformer,
         args.train_encoder,
-        args.train_decoder
+        args.train_decoder,
+        args.cp
     )
