@@ -11,7 +11,7 @@ from autoencoder.data import smiles_to_tokens, get_tokenizer, preprocess_smiles
 from transformers import AutoTokenizer
 import glob
 
-hidden_sizes = {'s': 128, 'm': 512, 'l': 512}
+# hidden_sizes = {'s': 128, 'm': 512, 'l': 512}
 num_layers = {'s': 2, 'm': 6, 'l': 24}
 num_heads = {'s': 2, 'm': 4, 'l': 8}
 
@@ -30,7 +30,7 @@ def size_to_config(size, hidden_size=512):
         hidden_size=hidden_size,
         num_hidden_layers=num_layers[size],
         num_attention_heads=num_heads[size],
-        intermediate_size=hidden_sizes[size] * 4,
+        intermediate_size=hidden_size * 4,
         max_position_embeddings=25,
     )
     return config
@@ -264,7 +264,7 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
     val_dataset = ReactionMolsDataset(split="valid", is_molformer=use_molformer)
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
-    config = size_to_config(size)
+    config = size_to_config(size, hidden_size=512 if not use_molformer else 768)
     model = MVM(config=config, alpha=alpha, is_molformer=use_molformer)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
