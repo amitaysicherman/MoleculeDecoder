@@ -158,7 +158,7 @@ class MVM(nn.Module):
         flat_mol_attention_mask = mol_attention_mask.view(-1) == 1  # (batch_size * max_seq_len)
         flat_input_ids = flat_input_ids[flat_mol_attention_mask]
         flat_attention_mask = flat_attention_mask[flat_mol_attention_mask]
-        chunk_size = 1024  # Adjust based on your GPU memory
+        chunk_size = 512  # Adjust based on your GPU memory
         all_embeddings = []
         for i in range(0, flat_input_ids.size(0), chunk_size):
             chunk_input_ids = flat_input_ids[i:i + chunk_size]
