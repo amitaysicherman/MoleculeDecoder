@@ -205,11 +205,13 @@ class MVM(nn.Module):
         labels = tgt_input_ids_decoder.clone()
         labels_mask = products_token_attention_mask[:, 0]
         labels[labels_mask == 0] = -100
-
-        decoder_output = decoder(tgt_input_ids_decoder, tgt_input_ids_decoder_mask,
-                                 encoder_hidden_states=bert_predict.unsqueeze(1),
-                                 labels=labels)
-
+        if not self.is_molformer:
+            decoder_output = decoder(tgt_input_ids_decoder, tgt_input_ids_decoder_mask,
+                                     encoder_hidden_states=bert_predict.unsqueeze(1),
+                                     labels=labels)
+        else:
+            decoder_output = decoder(input_ids=tgt_input_ids_decoder, attention_mask=tgt_input_ids_decoder_mask,
+                                     labels=labels, encoder_outputs=bert_predict.unsqueeze(1))
         decoder_output.decoder_hidden_states = bert_predict
         decoder_output.loss = self.alpha * loss + (1 - self.alpha) * decoder_output.loss
 
