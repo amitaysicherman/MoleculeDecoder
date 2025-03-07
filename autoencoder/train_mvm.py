@@ -325,8 +325,12 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
         if last_cp is None:
             raise ValueError("Checkpoint path does not exist")
         model_file = f"{last_cp}/pytorch_model.bin"
-        model.load_state_dict(torch.load(model_file, map_location=device))
+        missing_keys, unexpected_keys = model.load_state_dict(torch.load(model_file, map_location=device), strict=False)
         print(f"Loaded model from {model_file}")
+        missing_prefixes= list(set([k.split(".")[0] for k in missing_keys]))
+        print(f"Missing prefixes: {missing_prefixes}")
+        unexpected_prefixes = list(set([k.split(".")[0] for k in unexpected_keys]))
+        print(f"Unexpected prefixes: {unexpected_prefixes}")
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
     total_params = trainable_params + non_trainable_params
