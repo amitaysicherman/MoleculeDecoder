@@ -341,6 +341,8 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
         output_suf += "_train_enc"
     if train_decoder:
         output_suf += "_train_dec"
+    if cp is not None:
+        output_suf += "_cp"
 
     os.makedirs(f"res_auto_mvm/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
