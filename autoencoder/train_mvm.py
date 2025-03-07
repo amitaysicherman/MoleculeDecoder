@@ -133,11 +133,13 @@ class ReactionMolsDataset(Dataset):
 
 
 class MVM(nn.Module):
-    def __init__(self, config, alpha=0.5,is_molformer=False):
+    def __init__(self, config, alpha=0.5, is_molformer=False, encoder=None, decoder=None):
         super().__init__()
         self.config = config
         self.alpha = alpha
         self.is_molformer = is_molformer
+        self.encoder = encoder
+        self.decoder = decoder
 
         self.bert_model = BertModel(config)
 
@@ -156,21 +158,21 @@ class MVM(nn.Module):
         flat_mol_attention_mask = mol_attention_mask.view(-1) == 1  # (batch_size * max_seq_len)
         flat_input_ids = flat_input_ids[flat_mol_attention_mask]
         flat_attention_mask = flat_attention_mask[flat_mol_attention_mask]
-        chunk_size = 2048  # Adjust based on your GPU memory
+        chunk_size = 1024  # Adjust based on your GPU memory
         all_embeddings = []
         for i in range(0, flat_input_ids.size(0), chunk_size):
             chunk_input_ids = flat_input_ids[i:i + chunk_size]
             chunk_attention_mask = flat_attention_mask[i:i + chunk_size]
-            with torch.no_grad():
-                outputs = encoder(
-                    input_ids=chunk_input_ids,
-                    attention_mask=chunk_attention_mask
-                )
-                if self.is_molformer:
-                    output = outputs.pooler_output
-                else:
-                    output = outputs.squeeze(1)
-                all_embeddings.append(output)
+            # with torch.no_grad():
+            outputs = self.encoder(
+                input_ids=chunk_input_ids,
+                attention_mask=chunk_attention_mask
+            )
+            if self.is_molformer:
+                output = outputs.pooler_output
+            else:
+                output = outputs.squeeze(1)
+            all_embeddings.append(output)
         embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
         final_emb = torch.zeros(flat_mol_attention_mask.size(0), embeddings.size(-1), device=embeddings.device)
         final_emb[flat_mol_attention_mask.nonzero(as_tuple=True)[0]] = embeddings
@@ -206,12 +208,12 @@ class MVM(nn.Module):
         labels_mask = products_token_attention_mask[:, 0]
         labels[labels_mask == 0] = -100
         if not self.is_molformer:
-            decoder_output = decoder(tgt_input_ids_decoder, tgt_input_ids_decoder_mask,
-                                     encoder_hidden_states=bert_predict.unsqueeze(1),
-                                     labels=labels)
+            decoder_output = self.decoder(tgt_input_ids_decoder, tgt_input_ids_decoder_mask,
+                                          encoder_hidden_states=bert_predict.unsqueeze(1),
+                                          labels=labels)
         else:
-            decoder_output = decoder(input_ids=tgt_input_ids_decoder, attention_mask=tgt_input_ids_decoder_mask,
-                                     labels=labels, encoder_outputs=bert_predict.unsqueeze(1))
+            decoder_output = self.decoder(input_ids=tgt_input_ids_decoder, attention_mask=tgt_input_ids_decoder_mask,
+                                          labels=labels, encoder_outputs=bert_predict.unsqueeze(1))
         decoder_output.decoder_hidden_states = bert_predict
         decoder_output.loss = self.alpha * loss + (1 - self.alpha) * decoder_output.loss
 
@@ -261,21 +263,79 @@ def get_last_cp(base_dir):
     return f"{base_dir}/checkpoint-{last_cp}"
 
 
-def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molformer=False):
+def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molformer=False, train_encoder=False,
+         train_decoder=False):
     train_dataset = ReactionMolsDataset(split="train", is_molformer=use_molformer)
     val_dataset = ReactionMolsDataset(split="valid", is_molformer=use_molformer)
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
     config = size_to_config(size, hidden_size=512 if not use_molformer else 768)
-    model = MVM(config=config, alpha=alpha, is_molformer=use_molformer)
+
+    # Load encoder and decoder
+    if use_molformer:
+        from transformers import AutoModel
+        from train_decoder import create_model
+
+        encoder = AutoModel.from_pretrained(
+            "ibm/MoLFormer-XL-both-10pct",
+            deterministic_eval=True,
+            trust_remote_code=True,
+            use_safetensors=False  # Force using PyTorch format instead of safetensors
+        )
+        encoder.to(device)
+
+        # Set encoder trainability based on argument
+        for param in encoder.parameters():
+            param.requires_grad = train_encoder
+
+        decoder, _ = create_model()
+        state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
+        decoder.load_state_dict(state_dict, strict=True)
+        decoder.to(device)
+
+        # Set decoder trainability based on argument
+        for param in decoder.parameters():
+            param.requires_grad = train_decoder
+    else:
+        from autoencoder.model import get_model
+        tokenizer = get_tokenizer()
+
+        model = get_model('ae', "m", tokenizer)
+        state_dict = torch.load(f"{get_last_cp('res_auto/ae_m')}/pytorch_model.bin", map_location=torch.device('cpu'))
+        model.load_state_dict(state_dict, strict=True)
+
+        encoder = model.encoder
+        encoder.to(device)
+
+        # Set encoder trainability based on argument
+        for param in encoder.parameters():
+            param.requires_grad = train_encoder
+
+        decoder = model.decoder
+        decoder.to(device)
+
+        # Set decoder trainability based on argument
+        for param in decoder.parameters():
+            param.requires_grad = train_decoder
+
+    # Initialize MVM model with encoder and decoder
+    model = MVM(config=config, alpha=alpha, is_molformer=use_molformer, encoder=encoder, decoder=decoder)
+
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
     total_params = trainable_params + non_trainable_params
     print(
         f"MODEL:MVM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
+
+    # Update output suffix to include encoder/decoder training info
     output_suf = f"{size}_{lr}_{alpha}"
     if use_molformer:
         output_suf += "_molformer"
+    if train_encoder:
+        output_suf += "_train_enc"
+    if train_decoder:
+        output_suf += "_train_dec"
+
     os.makedirs(f"res_auto_mvm/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
         output_dir=f"res_auto_mvm/{output_suf}",
@@ -325,43 +385,17 @@ if __name__ == "__main__":
     parser.add_argument("--size", type=str, default="s")
     parser.add_argument("--alpha", type=float, default=0.0)
     parser.add_argument("--molformer", action="store_true")
+    parser.add_argument("--train_encoder", action="store_true", help="Enable training of the encoder")
+    parser.add_argument("--train_decoder", action="store_true", help="Enable training of the decoder")
     args = parser.parse_args()
 
-    from autoencoder.model import get_model
-
-    tokenizer = get_tokenizer()
-
-    if args.molformer:
-        from transformers import AutoModel
-        from train_decoder import create_model
-
-        encoder = AutoModel.from_pretrained(
-            "ibm/MoLFormer-XL-both-10pct",
-            deterministic_eval=True,
-            trust_remote_code=True,
-            use_safetensors=False  # Force using PyTorch format instead of safetensors
-        )
-        encoder.eval().to(device)
-        for param in encoder.parameters():
-            param.requires_grad = False
-
-        decoder, _ = create_model()
-        state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
-        decoder.load_state_dict(state_dict, strict=True)
-        decoder.eval().to(device)
-        for param in decoder.parameters():
-            param.requires_grad = False
-    else:
-        model = get_model('ae', "m", tokenizer)
-        state_dict = torch.load(f"{get_last_cp('res_auto/ae_m')}/pytorch_model.bin", map_location=torch.device('cpu'))
-        model.load_state_dict(state_dict, strict=True)
-        encoder = model.encoder
-        encoder.eval().to(device)
-        for param in encoder.parameters():
-            param.requires_grad = False
-        decoder = model.decoder
-        decoder.eval().to(device)
-        for param in decoder.parameters():
-            param.requires_grad = False
-
-    main(args.batch_size, args.num_epochs, args.lr, args.size, args.alpha, args.molformer)
+    main(
+        args.batch_size,
+        args.num_epochs,
+        args.lr,
+        args.size,
+        args.alpha,
+        args.molformer,
+        args.train_encoder,
+        args.train_decoder
+    )
