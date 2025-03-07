@@ -133,10 +133,11 @@ class ReactionMolsDataset(Dataset):
 
 
 class MVM(nn.Module):
-    def __init__(self, config, alpha=0.5):
+    def __init__(self, config, alpha=0.5,is_molformer=False):
         super().__init__()
         self.config = config
         self.alpha = alpha
+        self.is_molformer = is_molformer
 
         self.bert_model = BertModel(config)
 
@@ -165,7 +166,11 @@ class MVM(nn.Module):
                     input_ids=chunk_input_ids,
                     attention_mask=chunk_attention_mask
                 )
-                all_embeddings.append(outputs.squeeze(1))
+                if self.is_molformer:
+                    output = outputs.pooler_output
+                else:
+                    output = outputs.squeeze(1)
+                all_embeddings.append(output)
         embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
         final_emb = torch.zeros(flat_mol_attention_mask.size(0), embeddings.size(-1), device=embeddings.device)
         final_emb[flat_mol_attention_mask.nonzero(as_tuple=True)[0]] = embeddings
@@ -260,7 +265,7 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
     config = size_to_config(size)
-    model = MVM(config=config, alpha=alpha)
+    model = MVM(config=config, alpha=alpha, is_molformer=use_molformer)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     non_trainable_params = sum(p.numel() for p in model.parameters() if not p.requires_grad)
     total_params = trainable_params + non_trainable_params
