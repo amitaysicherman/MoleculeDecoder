@@ -133,14 +133,14 @@ class ReactionMolsDataset(Dataset):
 
 
 class MVM(nn.Module):
-    def __init__(self, config, alpha=0.5, is_molformer=False, encoder=None, decoder=None):
+    def __init__(self, config, alpha=0.5, is_molformer=False, encoder=None, decoder=None, is_trainable_encoder=False):
         super().__init__()
         self.config = config
         self.alpha = alpha
         self.is_molformer = is_molformer
         self.encoder = encoder
+        self.is_trainable_encoder = is_trainable_encoder
         self.decoder = decoder
-
         self.bert_model = BertModel(config)
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size), requires_grad=True)
@@ -158,16 +158,26 @@ class MVM(nn.Module):
         flat_mol_attention_mask = mol_attention_mask.view(-1) == 1  # (batch_size * max_seq_len)
         flat_input_ids = flat_input_ids[flat_mol_attention_mask]
         flat_attention_mask = flat_attention_mask[flat_mol_attention_mask]
-        chunk_size = 256  # Adjust based on your GPU memory
+        if not self.is_trainable_encoder:
+            chunk_size = 2048
+        else:
+            chunk_size = 256  # Adjust based on your GPU memory
         all_embeddings = []
         for i in range(0, flat_input_ids.size(0), chunk_size):
             chunk_input_ids = flat_input_ids[i:i + chunk_size]
             chunk_attention_mask = flat_attention_mask[i:i + chunk_size]
-            # with torch.no_grad():
-            outputs = self.encoder(
-                input_ids=chunk_input_ids,
-                attention_mask=chunk_attention_mask
-            )
+            # torch.no_grad(): if not training the encoder
+            if self.is_trainable_encoder:
+                outputs = self.encoder(
+                    input_ids=chunk_input_ids,
+                    attention_mask=chunk_attention_mask
+                )
+            else:
+                with torch.no_grad():
+                    outputs = self.encoder(
+                        input_ids=chunk_input_ids,
+                        attention_mask=chunk_attention_mask
+                    )
             if self.is_molformer:
                 output = outputs.pooler_output
             else:
@@ -282,20 +292,11 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
             trust_remote_code=True,
             use_safetensors=False  # Force using PyTorch format instead of safetensors
         )
-        encoder.to(device)
-
-        # Set encoder trainability based on argument
-        for param in encoder.parameters():
-            param.requires_grad = train_encoder
 
         decoder, _ = create_model()
         state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
         decoder.load_state_dict(state_dict, strict=True)
-        decoder.to(device)
 
-        # Set decoder trainability based on argument
-        for param in decoder.parameters():
-            param.requires_grad = train_decoder
     else:
         from autoencoder.model import get_model
         tokenizer = get_tokenizer()
@@ -305,21 +306,19 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
         model.load_state_dict(state_dict, strict=True)
 
         encoder = model.encoder
-        encoder.to(device)
-
-        # Set encoder trainability based on argument
-        for param in encoder.parameters():
-            param.requires_grad = train_encoder
-
         decoder = model.decoder
-        decoder.to(device)
 
-        # Set decoder trainability based on argument
-        for param in decoder.parameters():
-            param.requires_grad = train_decoder
+    encoder.to(device)
+    for param in encoder.parameters():
+        param.requires_grad = train_encoder
+
+    decoder.to(device)
+    for param in decoder.parameters():
+        param.requires_grad = train_decoder
 
     # Initialize MVM model with encoder and decoder
-    model = MVM(config=config, alpha=alpha, is_molformer=use_molformer, encoder=encoder, decoder=decoder)
+    model = MVM(config=config, alpha=alpha, is_molformer=use_molformer, encoder=encoder, decoder=decoder,
+                is_trainable_encoder=train_encoder)
     if cp is not None:
         last_cp = get_last_cp(cp)
         if last_cp is None:
@@ -327,7 +326,7 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
         model_file = f"{last_cp}/pytorch_model.bin"
         missing_keys, unexpected_keys = model.load_state_dict(torch.load(model_file, map_location=device), strict=False)
         print(f"Loaded model from {model_file}")
-        missing_prefixes= list(set([k.split(".")[0] for k in missing_keys]))
+        missing_prefixes = list(set([k.split(".")[0] for k in missing_keys]))
         print(f"Missing prefixes: {missing_prefixes}")
         unexpected_prefixes = list(set([k.split(".")[0] for k in unexpected_keys]))
         print(f"Unexpected prefixes: {unexpected_prefixes}")
@@ -386,6 +385,7 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
     # print(trainer.evaluate())
     # trainer.train(resume_from_checkpoint=get_last_cp(f"res_auto_mvm/{output_suf}") is not None)
     trainer.train()
+
 
 if __name__ == "__main__":
     import argparse
