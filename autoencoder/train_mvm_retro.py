@@ -322,8 +322,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument("--size", type=str, default="s")
-    parser.add_argument("--train_encoder", action="store_true", help="Enable training of the encoder")
-    parser.add_argument("--train_decoder", action="store_true", help="Enable training of the decoder")
+    parser.add_argument("--train_encoder", type=int, default=1)
+    parser.add_argument("--train_decoder", type=int, default=1)
     parser.add_argument("--cp", type=str, default=None)
     args = parser.parse_args()
 
@@ -332,7 +332,7 @@ if __name__ == "__main__":
         args.num_epochs,
         args.lr,
         args.size,
-        args.train_encoder,
-        args.train_decoder,
+        bool(args.train_encoder),
+        bool(args.train_decoder),
         args.cp,
     )
