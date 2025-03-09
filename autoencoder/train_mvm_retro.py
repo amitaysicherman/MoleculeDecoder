@@ -222,7 +222,7 @@ def get_last_cp(base_dir):
     return f"{base_dir}/checkpoint-{last_cp}"
 
 
-def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
+def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
          train_decoder=False, cp=None):
     train_dataset = ReactionMolsDataset(split="train")
     val_dataset = ReactionMolsDataset(split="valid")
@@ -288,10 +288,10 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
         per_device_eval_batch_size=batch_size,
         eval_accumulation_steps=10,
         logging_dir=f"logs_auto_mvm_retro/{output_suf}",
-        logging_steps=100,
-        save_steps=500,
+        logging_steps=1000,
+        save_steps=5000,
         evaluation_strategy="steps",
-        eval_steps=500,
+        eval_steps=5000,
         save_total_limit=1,
         load_best_model_at_end=True,
         save_safetensors=False,
