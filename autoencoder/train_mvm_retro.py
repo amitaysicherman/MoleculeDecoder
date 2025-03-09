@@ -232,6 +232,7 @@ def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
          train_decoder=False, cp=None):
     train_dataset = ReactionMolsDataset(split="train")
     val_dataset = ReactionMolsDataset(split="valid")
+    val_dataset.reactants = val_dataset.reactants[:100]
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
     encoder_config, decoder_config = size_to_configs(size, 768, train_dataset.tokenizer)
@@ -292,7 +293,7 @@ def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
         num_train_epochs=num_epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        eval_accumulation_steps=100,
+        eval_accumulation_steps=10,
         logging_dir=f"logs_auto_mvm_retro/{output_suf}",
         logging_steps=1000,
         save_steps=5000,
