@@ -280,14 +280,14 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
     if cp is not None:
         output_suf += "_cp"
 
-    os.makedirs(f"res_auto_mvm/{output_suf}", exist_ok=True)
+    os.makedirs(f"res_auto_mvm_retro/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
-        output_dir=f"res_auto_mvm/{output_suf}",
+        output_dir=f"res_auto_mvm_retro/{output_suf}",
         num_train_epochs=num_epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
         eval_accumulation_steps=10,
-        logging_dir=f"logs_auto_mvm/{output_suf}",
+        logging_dir=f"logs_auto_mvm_retro/{output_suf}",
         logging_steps=100,
         save_steps=500,
         evaluation_strategy="steps",
