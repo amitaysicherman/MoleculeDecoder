@@ -11,11 +11,11 @@ from autoencoder.data import smiles_to_tokens
 
 
 class TranslationDataset(Dataset):
-    def __init__(self, split, tokenizer, max_length=128):
+    def __init__(self, split, tokenizer, max_length=128,is_retro=False):
         self.tokenizer = tokenizer
         self.max_length = max_length
         base_dir = "USPTO"
-
+        self.is_retro = is_retro
         # Read source and target files
         with open(f"{base_dir}/reactants-{split}.txt") as f:
             self.reactants = f.read().splitlines()
@@ -30,9 +30,14 @@ class TranslationDataset(Dataset):
     def __getitem__(self, idx):
         reac = self.reactants[idx]
         reag = self.reagents[idx]
-        source = f"{reac} .. {reag}"
-        target = self.products[idx]
+        prod = self.products[idx]
 
+        if not self.is_retro:
+            source = f"{reac} .. {reag}"
+            target = prod
+        else:
+            source = prod
+            target = reac
         source_tokens = " ".join(smiles_to_tokens(source))
         target_tokens = " ".join(smiles_to_tokens(target))
         source_encoding = self.tokenizer.encode(
@@ -66,18 +71,6 @@ def compute_metrics(eval_pred):
         "perfect_match_accuracy": perfect_match_accuracy,
         "token_accuracy": token_accuracy
     }
-import os
-import glob
-def get_last_cp(base_dir):
-    if not os.path.exists(base_dir):
-        return None
-    all_checkpoints = glob.glob(f"{base_dir}/checkpoint-*")
-    if not all_checkpoints:
-        return None
-    cp_steps = [int(cp.split("-")[-1]) for cp in all_checkpoints]
-    last_cp = max(cp_steps)
-    return f"{base_dir}/checkpoint-{last_cp}"
-
 
 def main(retro=False):
     # Build vocabulary and create tokenizer
@@ -101,15 +94,15 @@ def main(retro=False):
     print(f"Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
 
     # Prepare datasets
-    src_prefix = "src" if not retro else "tgt"
-    tgt_prefix = "tgt" if not retro else "src"
     train_dataset = TranslationDataset(
         "train",
-        tokenizer
+        tokenizer,
+        is_retro=retro
     )
     eval_dataset = TranslationDataset(
         "valid",
-        tokenizer
+        tokenizer,
+        is_retro=retro
     )
 
     # Training arguments
