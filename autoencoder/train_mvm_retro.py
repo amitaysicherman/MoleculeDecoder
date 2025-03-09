@@ -37,21 +37,15 @@ def size_to_config(size, hidden_size=512):
 
 
 class ReactionMolsDataset(Dataset):
-    def __init__(self, base_dir="USPTO", split="train", max_mol_len=75, max_len=10, skip_unk=True, is_molformer=False):
+    def __init__(self, base_dir="USPTO", split="train", max_mol_len=75, max_len=10, skip_unk=True):
         self.max_len = max_len
         self.max_mol_len = max_mol_len
         self.skip_unk = skip_unk
-        self.is_molformer = is_molformer
         with open(f"{base_dir}/reactants-{split}.txt") as f:
             self.reactants = f.read().splitlines()
         with open(f"{base_dir}/products-{split}.txt") as f:
             self.products = f.read().splitlines()
-        with open(f"{base_dir}/reagents-{split}.txt") as f:
-            self.reagents = f.read().splitlines()
-        if is_molformer:
-            self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
-        else:
-            self.tokenizer = get_tokenizer()
+        self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
         self.empty = {"input_ids": torch.tensor([self.tokenizer.pad_token_id] * 75),
                       "attention_mask": torch.tensor([0] * 75)}
 
@@ -67,24 +61,13 @@ class ReactionMolsDataset(Dataset):
 
         if len(mols) > self.max_len:
             return None
-        if not self.is_molformer:
-            mols = [smiles_to_tokens(s) for s in mols]
-            if None in mols:
-                return None
-            if any([len(s) > self.max_mol_len for s in mols]):
-                return None
-            mols = [" ".join(m) for m in mols]
-            tokens = [self.tokenizer.encode(m, max_length=self.max_mol_len) for m in mols]
-        else:
-            mols = [preprocess_smiles(m) for m in mols]
-            if None in mols:
-                return None
-            tokens = [self.tokenizer(m, padding="max_length", truncation=True, max_length=self.max_mol_len,
-                                     return_tensors="pt") for m in mols]
-            tokens = [{k: v.squeeze(0) for k, v in t.items()} for t in tokens]
-            for t in tokens:
-                if t['attention_mask'][-1] != 0:
-                    return None
+        mols = [smiles_to_tokens(s) for s in mols]
+        if None in mols:
+            return None
+        if any([len(s) > self.max_mol_len for s in mols]):
+            return None
+        mols = [" ".join(m) for m in mols]
+        tokens = [self.tokenizer.encode(m, max_length=self.max_mol_len) for m in mols]
         if self.skip_unk:
             if any([self.tokenizer.unk_token_id in t['input_ids'] for t in tokens]):
                 print("Skipping UNK")
@@ -103,18 +86,17 @@ class ReactionMolsDataset(Dataset):
         }
 
     def __getitem__(self, idx):
-        reactants, products, reagents = self.reactants[idx], self.products[idx], self.reagents[idx]
+        reactants, products = self.reactants[idx], self.products[idx]
 
         continue_run = True
         while continue_run:
             reactants_tokens = self.preprocess_line(reactants)
             products_tokens = self.preprocess_line(products)
-            reagents_tokens = self.preprocess_line(reagents)
-            if reactants_tokens is not None and products_tokens is not None and reagents_tokens is not None:
+            if reactants_tokens is not None and products_tokens is not None:
                 continue_run = False
             else:
                 idx = random.randint(0, len(self.reactants) - 1)
-                reactants, products, reagents = self.reactants[idx], self.products[idx], self.reagents[idx]
+                reactants, products = self.reactants[idx], self.products[idx]
 
         return {
             'reactants_input_ids': reactants_tokens['input_ids'],
@@ -123,9 +105,6 @@ class ReactionMolsDataset(Dataset):
             'products_input_ids': products_tokens['input_ids'],
             'products_token_attention_mask': products_tokens['token_attention_mask'],
             'products_mol_attention_mask': products_tokens['mol_attention_mask'],
-            'reagents_input_ids': reagents_tokens['input_ids'],
-            'reagents_token_attention_mask': reagents_tokens['token_attention_mask'],
-            'reagents_mol_attention_mask': reagents_tokens['mol_attention_mask'],
         }
 
     def __len__(self):
@@ -133,11 +112,10 @@ class ReactionMolsDataset(Dataset):
 
 
 class MVM(nn.Module):
-    def __init__(self, config, alpha=0.5, is_molformer=False, encoder=None, decoder=None, is_trainable_encoder=False):
+    def __init__(self, config, alpha=0.5, encoder=None, decoder=None, is_trainable_encoder=False):
         super().__init__()
         self.config = config
         self.alpha = alpha
-        self.is_molformer = is_molformer
         self.encoder = encoder
         self.is_trainable_encoder = is_trainable_encoder
         self.decoder = decoder
@@ -145,7 +123,6 @@ class MVM(nn.Module):
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size), requires_grad=True)
         self.sep_token = nn.Parameter(torch.randn(1, 1, config.hidden_size), requires_grad=True)
-        # self.pad_embedding = nn.Parameter(torch.zeros(config.hidden_size), requires_grad=False)
 
     def get_mol_embeddings(self, input_ids, token_attention_mask, mol_attention_mask):
         """
@@ -155,58 +132,39 @@ class MVM(nn.Module):
 
         flat_input_ids = input_ids.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
         flat_attention_mask = token_attention_mask.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
-
-        if self.is_trainable_encoder:
-            outputs = self.encoder(
-                input_ids=flat_input_ids,
-                attention_mask=flat_attention_mask
-            )
+        flat_mol_attention_mask = mol_attention_mask.view(-1) == 1  # (batch_size * max_seq_len)
+        flat_input_ids = flat_input_ids[flat_mol_attention_mask]
+        flat_attention_mask = flat_attention_mask[flat_mol_attention_mask]
+        if not self.is_trainable_encoder:
+            chunk_size = 2048
         else:
-            with torch.no_grad():
+            chunk_size = 256  # Adjust based on your GPU memory
+        all_embeddings = []
+        for i in range(0, flat_input_ids.size(0), chunk_size):
+            chunk_input_ids = flat_input_ids[i:i + chunk_size]
+            chunk_attention_mask = flat_attention_mask[i:i + chunk_size]
+            # torch.no_grad(): if not training the encoder
+            if self.is_trainable_encoder:
                 outputs = self.encoder(
-                    input_ids=flat_input_ids,
-                    attention_mask=flat_attention_mask
+                    input_ids=chunk_input_ids,
+                    attention_mask=chunk_attention_mask
                 )
-        if self.is_molformer:
-            output = outputs.pooler_output
-        else:
-            output = outputs.squeeze(1)
-        embeddings = output.view(batch_size, max_seq_len, -1)
-        return embeddings
-
-        # flat_mol_attention_mask = mol_attention_mask.view(-1) == 1  # (batch_size * max_seq_len)
-        # flat_input_ids = flat_input_ids[flat_mol_attention_mask]
-        # flat_attention_mask = flat_attention_mask[flat_mol_attention_mask]
-        # if not self.is_trainable_encoder:
-        #     chunk_size = 2048
-        # else:
-        #     chunk_size = 256  # Adjust based on your GPU memory
-        # all_embeddings = []
-        # for i in range(0, flat_input_ids.size(0), chunk_size):
-        #     chunk_input_ids = flat_input_ids[i:i + chunk_size]
-        #     chunk_attention_mask = flat_attention_mask[i:i + chunk_size]
-        #     # torch.no_grad(): if not training the encoder
-        #     if self.is_trainable_encoder:
-        #         outputs = self.encoder(
-        #             input_ids=chunk_input_ids,
-        #             attention_mask=chunk_attention_mask
-        #         )
-        #     else:
-        #         with torch.no_grad():
-        #             outputs = self.encoder(
-        #                 input_ids=chunk_input_ids,
-        #                 attention_mask=chunk_attention_mask
-        #             )
-        #     if self.is_molformer:
-        #         output = outputs.pooler_output
-        #     else:
-        #         output = outputs.squeeze(1)
-        #     all_embeddings.append(output)
-        # embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
-        # final_emb = torch.zeros(flat_mol_attention_mask.size(0), embeddings.size(-1), device=embeddings.device)
-        # final_emb[flat_mol_attention_mask.nonzero(as_tuple=True)[0]] = embeddings
-        # final_emb = final_emb.view(batch_size, max_seq_len, -1)
-        # return final_emb
+            else:
+                with torch.no_grad():
+                    outputs = self.encoder(
+                        input_ids=chunk_input_ids,
+                        attention_mask=chunk_attention_mask
+                    )
+            if self.is_molformer:
+                output = outputs.pooler_output
+            else:
+                output = outputs.squeeze(1)
+            all_embeddings.append(output)
+        embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
+        final_emb = torch.zeros(flat_mol_attention_mask.size(0), embeddings.size(-1), device=embeddings.device)
+        final_emb[flat_mol_attention_mask.nonzero(as_tuple=True)[0]] = embeddings
+        final_emb = final_emb.view(batch_size, max_seq_len, -1)
+        return final_emb
 
     def forward(self, reactants_input_ids, reactants_token_attention_mask, reactants_mol_attention_mask,
                 products_input_ids, products_token_attention_mask, products_mol_attention_mask,
@@ -236,13 +194,9 @@ class MVM(nn.Module):
         labels = tgt_input_ids_decoder.clone()
         labels_mask = products_token_attention_mask[:, 0]
         labels[labels_mask == 0] = -100
-        if not self.is_molformer:
-            decoder_output = self.decoder(tgt_input_ids_decoder, tgt_input_ids_decoder_mask,
-                                          encoder_hidden_states=bert_predict.unsqueeze(1),
-                                          labels=labels)
-        else:
-            decoder_output = self.decoder(input_ids=tgt_input_ids_decoder, attention_mask=tgt_input_ids_decoder_mask,
-                                          labels=labels, encoder_outputs=bert_predict.unsqueeze(1))
+        decoder_output = self.decoder(tgt_input_ids_decoder, tgt_input_ids_decoder_mask,
+                                      encoder_hidden_states=bert_predict.unsqueeze(1),
+                                      labels=labels)
         decoder_output.decoder_hidden_states = bert_predict
         decoder_output.loss = self.alpha * loss + (1 - self.alpha) * decoder_output.loss
 
