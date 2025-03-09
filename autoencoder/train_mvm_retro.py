@@ -100,7 +100,7 @@ class ReactionMolsDataset(Dataset):
 
     def __getitem__(self, idx):
         reactants, products = self.reactants[idx], self.products[idx]
-        products, reactants = reactants, products # Swap reactants and products for retrosynthesis
+        products, reactants = reactants, products  # Swap reactants and products for retrosynthesis
         continue_run = True
         while continue_run:
             reactants_tokens = self.preprocess_line(reactants)
@@ -190,21 +190,27 @@ def compute_metrics(eval_pred):
     """
     predictions, labels_ = eval_pred
     tgt_input_ids, tgt_token_attention_mask, tgt_mol_attention_mask = labels_
-    labels = tgt_input_ids[:, 0]
-    labels_mask = tgt_token_attention_mask[:, 0]
+    labels = tgt_input_ids  # Shape: (batch_size, max_seq_len, 75)
+
+    labels_mask = tgt_token_attention_mask
     labels[labels_mask == 0] = -100
-    # Get argmax of predictions
-    predictions = np.argmax(predictions, axis=-1)
+    predictions = np.argmax(predictions, axis=-1)  # Shape: (batch_size, max_seq_len, 75)
+    total_tokens = 0
+    total_samples = 0
+    correct_tokens = 0
+    correct_samples = 0
+    batch_size, max_seq_len, seq_len = labels.shape
+    for i in range(batch_size):
+        for j in range(max_seq_len):
+            total_tokens += labels_mask[i, j].sum()
+            correct_tokens += ((predictions[i, j] == labels[i, j]) & labels_mask[i, j]).sum()
+            if labels_mask[i, j].sum() == 0:
+                continue
+            total_samples += 1
+            correct_samples += ((predictions[i, j] == labels[i, j]) | (~labels_mask[i, j])).all()
 
-    mask = labels != -100
-    total_tokens = mask.sum()
-    correct_tokens = ((predictions == labels) & mask).sum()
     token_accuracy = correct_tokens / total_tokens
-    correct_or_pad = (predictions == labels) | (~mask)
-    correct_samples = correct_or_pad.all(axis=-1).sum()
-    total_samples = len(labels)
     sample_accuracy = correct_samples / total_samples
-
     return {
         "token_accuracy": token_accuracy,
         "sample_accuracy": sample_accuracy,
@@ -311,6 +317,7 @@ def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
         eval_dataset={'validation': val_dataset, "train": train_subset},
         compute_metrics=lambda x: compute_metrics(x),
     )
+    trainer.evaluate()
     trainer.train()
 
 
