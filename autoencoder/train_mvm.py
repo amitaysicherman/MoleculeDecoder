@@ -155,58 +155,39 @@ class MVM(nn.Module):
 
         flat_input_ids = input_ids.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
         flat_attention_mask = token_attention_mask.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
-
-        if self.is_trainable_encoder:
-            outputs = self.encoder(
-                input_ids=flat_input_ids,
-                attention_mask=flat_attention_mask
-            )
+        flat_mol_attention_mask = mol_attention_mask.view(-1) == 1  # (batch_size * max_seq_len)
+        flat_input_ids = flat_input_ids[flat_mol_attention_mask]
+        flat_attention_mask = flat_attention_mask[flat_mol_attention_mask]
+        if not self.is_trainable_encoder:
+            chunk_size = 2048
         else:
-            with torch.no_grad():
+            chunk_size = 256  # Adjust based on your GPU memory
+        all_embeddings = []
+        for i in range(0, flat_input_ids.size(0), chunk_size):
+            chunk_input_ids = flat_input_ids[i:i + chunk_size]
+            chunk_attention_mask = flat_attention_mask[i:i + chunk_size]
+            # torch.no_grad(): if not training the encoder
+            if self.is_trainable_encoder:
                 outputs = self.encoder(
-                    input_ids=flat_input_ids,
-                    attention_mask=flat_attention_mask
+                    input_ids=chunk_input_ids,
+                    attention_mask=chunk_attention_mask
                 )
-        if self.is_molformer:
-            output = outputs.pooler_output
-        else:
-            output = outputs.squeeze(1)
-        embeddings = output.view(batch_size, max_seq_len, -1)
-        return embeddings
-
-        # flat_mol_attention_mask = mol_attention_mask.view(-1) == 1  # (batch_size * max_seq_len)
-        # flat_input_ids = flat_input_ids[flat_mol_attention_mask]
-        # flat_attention_mask = flat_attention_mask[flat_mol_attention_mask]
-        # if not self.is_trainable_encoder:
-        #     chunk_size = 2048
-        # else:
-        #     chunk_size = 256  # Adjust based on your GPU memory
-        # all_embeddings = []
-        # for i in range(0, flat_input_ids.size(0), chunk_size):
-        #     chunk_input_ids = flat_input_ids[i:i + chunk_size]
-        #     chunk_attention_mask = flat_attention_mask[i:i + chunk_size]
-        #     # torch.no_grad(): if not training the encoder
-        #     if self.is_trainable_encoder:
-        #         outputs = self.encoder(
-        #             input_ids=chunk_input_ids,
-        #             attention_mask=chunk_attention_mask
-        #         )
-        #     else:
-        #         with torch.no_grad():
-        #             outputs = self.encoder(
-        #                 input_ids=chunk_input_ids,
-        #                 attention_mask=chunk_attention_mask
-        #             )
-        #     if self.is_molformer:
-        #         output = outputs.pooler_output
-        #     else:
-        #         output = outputs.squeeze(1)
-        #     all_embeddings.append(output)
-        # embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
-        # final_emb = torch.zeros(flat_mol_attention_mask.size(0), embeddings.size(-1), device=embeddings.device)
-        # final_emb[flat_mol_attention_mask.nonzero(as_tuple=True)[0]] = embeddings
-        # final_emb = final_emb.view(batch_size, max_seq_len, -1)
-        # return final_emb
+            else:
+                with torch.no_grad():
+                    outputs = self.encoder(
+                        input_ids=chunk_input_ids,
+                        attention_mask=chunk_attention_mask
+                    )
+            if self.is_molformer:
+                output = outputs.pooler_output
+            else:
+                output = outputs.squeeze(1)
+            all_embeddings.append(output)
+        embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
+        final_emb = torch.zeros(flat_mol_attention_mask.size(0), embeddings.size(-1), device=embeddings.device)
+        final_emb[flat_mol_attention_mask.nonzero(as_tuple=True)[0]] = embeddings
+        final_emb = final_emb.view(batch_size, max_seq_len, -1)
+        return final_emb
 
     def forward(self, reactants_input_ids, reactants_token_attention_mask, reactants_mol_attention_mask,
                 products_input_ids, products_token_attention_mask, products_mol_attention_mask,
