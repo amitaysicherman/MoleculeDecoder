@@ -10,6 +10,9 @@ import random
 from autoencoder.data import smiles_to_tokens, get_tokenizer, preprocess_smiles
 from transformers import AutoTokenizer
 import glob
+from transformers import BertGenerationDecoder, BertGenerationConfig, BertGenerationEncoder
+from transformers import AutoModel
+from train_decoder import create_model
 
 # hidden_sizes = {'s': 128, 'm': 512, 'l': 512}
 num_layers = {'s': 2, 'm': 6, 'l': 24}
@@ -24,16 +27,23 @@ else:
     device = torch.device("cpu")
 
 
-def size_to_config(size, hidden_size=512):
-    config = BertConfig(
-        vocab_size=1,
+def size_to_configs(size, hidden_size, tokenizer):
+    size_args = dict(
         hidden_size=hidden_size,
         num_hidden_layers=num_layers[size],
         num_attention_heads=num_heads[size],
         intermediate_size=hidden_size * 4,
-        max_position_embeddings=25,
     )
-    return config
+    common_args = dict(
+        vocab_size=tokenizer.vocab_size,
+        eos_token_id=tokenizer.eos_token_id,
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id,
+        is_encoder_decoder=True,
+    )
+    encoder_config = BertGenerationConfig(**common_args, **size_args, is_decoder=False)
+    decoder_config = BertGenerationConfig(**common_args, **size_args, is_decoder=True, add_cross_attention=True)
+    return encoder_config, decoder_config
 
 
 class ReactionMolsDataset(Dataset):
@@ -61,13 +71,16 @@ class ReactionMolsDataset(Dataset):
 
         if len(mols) > self.max_len:
             return None
-        mols = [smiles_to_tokens(s) for s in mols]
+        mols = [preprocess_smiles(m) for m in mols]
         if None in mols:
             return None
-        if any([len(s) > self.max_mol_len for s in mols]):
-            return None
-        mols = [" ".join(m) for m in mols]
-        tokens = [self.tokenizer.encode(m, max_length=self.max_mol_len) for m in mols]
+        tokens = [self.tokenizer(m, padding="max_length", truncation=True, max_length=self.max_mol_len,
+                                 return_tensors="pt") for m in mols]
+        tokens = [{k: v.squeeze(0) for k, v in t.items()} for t in tokens]
+        for t in tokens:
+            if t['attention_mask'][-1] != 0:
+                return None
+
         if self.skip_unk:
             if any([self.tokenizer.unk_token_id in t['input_ids'] for t in tokens]):
                 print("Skipping UNK")
@@ -87,7 +100,7 @@ class ReactionMolsDataset(Dataset):
 
     def __getitem__(self, idx):
         reactants, products = self.reactants[idx], self.products[idx]
-
+        products, reactants = reactants, products # Swap reactants and products for retrosynthesis
         continue_run = True
         while continue_run:
             reactants_tokens = self.preprocess_line(reactants)
@@ -112,17 +125,15 @@ class ReactionMolsDataset(Dataset):
 
 
 class MVM(nn.Module):
-    def __init__(self, config, alpha=0.5, encoder=None, decoder=None, is_trainable_encoder=False):
+    def __init__(self, config_enc, config_dec, encoder=None, decoder=None, is_trainable_encoder=False):
         super().__init__()
-        self.config = config
-        self.alpha = alpha
+        self.config_enc = config_enc
+        self.config_dec = config_dec
         self.encoder = encoder
         self.is_trainable_encoder = is_trainable_encoder
         self.decoder = decoder
-        self.bert_model = BertModel(config)
-
-        self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_size), requires_grad=True)
-        self.sep_token = nn.Parameter(torch.randn(1, 1, config.hidden_size), requires_grad=True)
+        self.bert_encoder = BertGenerationEncoder(config_enc)
+        self.bert_decoder = BertGenerationDecoder(config_dec)
 
     def get_mol_embeddings(self, input_ids, token_attention_mask, mol_attention_mask):
         batch_size, max_seq_len, seq_len = input_ids.shape
@@ -131,52 +142,49 @@ class MVM(nn.Module):
         flat_attention_mask = token_attention_mask.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
 
         with torch.set_grad_enabled(self.is_trainable_encoder):
-                outputs = self.encoder(
-                    input_ids=flat_input_ids,
-                    attention_mask=flat_attention_mask
-                )
+            outputs = self.encoder(
+                input_ids=flat_input_ids,
+                attention_mask=flat_attention_mask
+            )
         output = outputs.pooler_output
         embeddings = output.view(batch_size, max_seq_len, -1)
         return embeddings
 
     def forward(self, reactants_input_ids, reactants_token_attention_mask, reactants_mol_attention_mask,
-                products_input_ids, products_token_attention_mask, products_mol_attention_mask,
-                reagents_input_ids, reagents_token_attention_mask, reagents_mol_attention_mask):
+                products_input_ids, products_token_attention_mask, products_mol_attention_mask):
         reactants_embeddings = self.get_mol_embeddings(reactants_input_ids, reactants_token_attention_mask,
                                                        reactants_mol_attention_mask)
-        reagents_embeddings = self.get_mol_embeddings(reagents_input_ids, reagents_token_attention_mask,
-                                                      reagents_mol_attention_mask)
 
-        cls = self.cls_token.expand(reactants_embeddings.size(0), -1, -1)
-        sep = self.sep_token.expand(reactants_embeddings.size(0), -1, -1)
-        src_embeddings = torch.cat([cls, reactants_embeddings, sep, reagents_embeddings], dim=1)
-        ones_mask = torch.ones(src_embeddings.size(0), 1, device=src_embeddings.device)
-        src_mol_attention_mask = torch.cat(
-            [ones_mask, reactants_mol_attention_mask, ones_mask, reagents_mol_attention_mask], dim=1)
+        src_embeddings = reactants_embeddings
+        src_mol_attention_mask = reactants_mol_attention_mask
         src_seq_mask = src_mol_attention_mask.float()
-        output = self.bert_model(inputs_embeds=src_embeddings, attention_mask=src_seq_mask)
-        bert_predict = output['pooler_output']
 
-        gt_tgt_embeddings = self.get_mol_embeddings(products_input_ids, products_token_attention_mask,
-                                                    products_mol_attention_mask)
-        gt_tgt_embeddings = gt_tgt_embeddings[:, 0, :]
-        loss = F.mse_loss(bert_predict, gt_tgt_embeddings)
+        bert_encoder_output = self.bert_encoder(inputs_embeds=src_embeddings, attention_mask=src_seq_mask)[
+            'last_hidden_state']
 
-        tgt_input_ids_decoder = products_input_ids[:, 0].clone()
-        tgt_input_ids_decoder_mask = products_token_attention_mask[:, 0]
-        labels = tgt_input_ids_decoder.clone()
-        labels_mask = products_token_attention_mask[:, 0]
-        labels[labels_mask == 0] = -100
-        decoder_output = self.decoder(tgt_input_ids_decoder, tgt_input_ids_decoder_mask,
-                                      encoder_hidden_states=bert_predict.unsqueeze(1),
-                                      labels=labels)
-        decoder_output.decoder_hidden_states = bert_predict
-        decoder_output.loss = self.alpha * loss + (1 - self.alpha) * decoder_output.loss
+        product_embeddings = self.get_mol_embeddings(products_input_ids, products_token_attention_mask,
+                                                     products_mol_attention_mask)
 
-        return decoder_output
+        bert_decoder_output = self.bert_decoder(inputs_embeds=product_embeddings,
+                                                attention_mask=products_mol_attention_mask,
+                                                encoder_hidden_states=bert_encoder_output, output_hidden_states=True)
+        bert_decoder_output = bert_decoder_output['hidden_states'][-1]
+
+        bert_decoder_output_flattened = bert_decoder_output.view(-1, bert_decoder_output.size(-1))
+        bs, seq_len, _ = bert_decoder_output.size()
+        products_input_ids_flattened = products_input_ids.view(bs * seq_len, -1)
+        products_token_attention_mask_flattened = products_token_attention_mask.view(bs * seq_len, -1)
+        labels = products_input_ids_flattened.clone()
+        labels[products_token_attention_mask_flattened == 0] = -100
+
+        outputs = self.decoder(input_ids=products_input_ids_flattened,
+                               attention_mask=products_token_attention_mask_flattened,
+                               encoder_outputs=bert_decoder_output_flattened, labels=labels)
+
+        return outputs
 
 
-def compute_metrics(eval_pred, is_molformer=False):
+def compute_metrics(eval_pred):
     """
     Compute metrics for evaluation
     """
@@ -187,11 +195,6 @@ def compute_metrics(eval_pred, is_molformer=False):
     labels[labels_mask == 0] = -100
     # Get argmax of predictions
     predictions = np.argmax(predictions, axis=-1)
-
-    # use shift right to get the labels
-    if not is_molformer:
-        predictions = predictions[:, :-1]
-        labels = labels[:, 1:]
 
     mask = labels != -100
     total_tokens = mask.sum()
@@ -219,40 +222,25 @@ def get_last_cp(base_dir):
     return f"{base_dir}/checkpoint-{last_cp}"
 
 
-def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molformer=False, train_encoder=False,
+def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
          train_decoder=False, cp=None):
-    train_dataset = ReactionMolsDataset(split="train", is_molformer=use_molformer)
-    val_dataset = ReactionMolsDataset(split="valid", is_molformer=use_molformer)
+    train_dataset = ReactionMolsDataset(split="train")
+    val_dataset = ReactionMolsDataset(split="valid")
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
-    config = size_to_config(size, hidden_size=512 if not use_molformer else 768)
-
+    encoder_config, decoder_config = size_to_configs(size, 768, train_dataset.tokenizer)
     # Load encoder and decoder
-    if use_molformer:
-        from transformers import AutoModel
-        from train_decoder import create_model
 
-        encoder = AutoModel.from_pretrained(
-            "ibm/MoLFormer-XL-both-10pct",
-            deterministic_eval=True,
-            trust_remote_code=True,
-            use_safetensors=False  # Force using PyTorch format instead of safetensors
-        )
+    encoder = AutoModel.from_pretrained(
+        "ibm/MoLFormer-XL-both-10pct",
+        deterministic_eval=True,
+        trust_remote_code=True,
+        use_safetensors=False  # Force using PyTorch format instead of safetensors
+    )
 
-        decoder, _ = create_model()
-        state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
-        decoder.load_state_dict(state_dict, strict=True)
-
-    else:
-        from autoencoder.model import get_model
-        tokenizer = get_tokenizer()
-
-        model = get_model('ae', "m", tokenizer)
-        state_dict = torch.load(f"{get_last_cp('res_auto/ae_m')}/pytorch_model.bin", map_location=torch.device('cpu'))
-        model.load_state_dict(state_dict, strict=True)
-
-        encoder = model.encoder
-        decoder = model.decoder
+    decoder, _ = create_model()
+    state_dict = torch.load("results_decoder/checkpoint-195000/pytorch_model.bin", map_location=torch.device('cpu'))
+    decoder.load_state_dict(state_dict, strict=True)
 
     encoder.to(device)
     for param in encoder.parameters():
@@ -262,9 +250,10 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
     for param in decoder.parameters():
         param.requires_grad = train_decoder
 
-    # Initialize MVM model with encoder and decoder
-    model = MVM(config=config, alpha=alpha, is_molformer=use_molformer, encoder=encoder, decoder=decoder,
+    model = MVM(config_enc=encoder_config, config_dec=decoder_config, encoder=encoder, decoder=decoder,
                 is_trainable_encoder=train_encoder)
+
+    # Initialize MVM model with encoder and decoder
     if cp is not None:
         last_cp = get_last_cp(cp)
         if last_cp is None:
@@ -283,9 +272,7 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
         f"MODEL:MVM. Total parameters: {total_params:,}, (trainable: {trainable_params:,}, non-trainable: {non_trainable_params:,})")
 
     # Update output suffix to include encoder/decoder training info
-    output_suf = f"{size}_{lr}_{alpha}"
-    if use_molformer:
-        output_suf += "_molformer"
+    output_suf = f"{size}_{lr}"
     if train_encoder:
         output_suf += "_train_enc"
     if train_decoder:
@@ -322,14 +309,8 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
         args=train_args,
         train_dataset=train_dataset,
         eval_dataset={'validation': val_dataset, "train": train_subset},
-        compute_metrics=lambda x: compute_metrics(x, is_molformer=use_molformer),
+        compute_metrics=lambda x: compute_metrics(x),
     )
-
-    # model.load_state_dict(
-    #     torch.load(f"{get_last_cp(f'res_auto_mvm/{output_suf}')}/pytorch_model.bin", map_location=device))
-    #
-    # print(trainer.evaluate())
-    # trainer.train(resume_from_checkpoint=get_last_cp(f"res_auto_mvm/{output_suf}") is not None)
     trainer.train()
 
 
@@ -341,8 +322,6 @@ if __name__ == "__main__":
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument("--size", type=str, default="s")
-    parser.add_argument("--alpha", type=float, default=0.0)
-    parser.add_argument("--molformer", action="store_true")
     parser.add_argument("--train_encoder", action="store_true", help="Enable training of the encoder")
     parser.add_argument("--train_decoder", action="store_true", help="Enable training of the decoder")
     parser.add_argument("--cp", type=str, default=None)
@@ -353,9 +332,7 @@ if __name__ == "__main__":
         args.num_epochs,
         args.lr,
         args.size,
-        args.alpha,
-        args.molformer,
         args.train_encoder,
         args.train_decoder,
-        args.cp
+        args.cp,
     )
