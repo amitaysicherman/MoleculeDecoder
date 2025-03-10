@@ -137,18 +137,24 @@ class MVM(nn.Module):
 
     def get_mol_embeddings(self, input_ids, token_attention_mask, mol_attention_mask):
         batch_size, max_seq_len, seq_len = input_ids.shape
-
         flat_input_ids = input_ids.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
         flat_attention_mask = token_attention_mask.view(-1, seq_len)  # (batch_size * max_seq_len, 75)
-
+        flat_mol_attention_mask = mol_attention_mask.view(-1) == 1  # (batch_size * max_seq_len)
+        flat_input_ids = flat_input_ids[flat_mol_attention_mask]
+        flat_attention_mask = flat_attention_mask[flat_mol_attention_mask]
+        chunk_size = 2048 if not self.is_trainable_encoder else 256
+        all_embeddings = []
         with torch.set_grad_enabled(self.is_trainable_encoder):
-            outputs = self.encoder(
-                input_ids=flat_input_ids,
-                attention_mask=flat_attention_mask
-            )
-        output = outputs.pooler_output
-        embeddings = output.view(batch_size, max_seq_len, -1)
-        return embeddings
+            for i in range(0, flat_input_ids.size(0), chunk_size):
+                all_embeddings.append(self.encoder(
+                    input_ids=flat_input_ids[i:i + chunk_size],
+                    attention_mask=flat_attention_mask[i:i + chunk_size]
+                ).pooler_output)
+        embeddings = torch.cat(all_embeddings, dim=0)  # (batch_size * max_seq_len, hidden_size)
+        final_emb = torch.zeros(flat_mol_attention_mask.size(0), embeddings.size(-1), device=embeddings.device)
+        final_emb[flat_mol_attention_mask.nonzero(as_tuple=True)[0]] = embeddings
+        final_emb = final_emb.view(batch_size, max_seq_len, -1)
+        return final_emb
 
     def forward(self, reactants_input_ids, reactants_token_attention_mask, reactants_mol_attention_mask,
                 products_input_ids, products_token_attention_mask, products_mol_attention_mask):
@@ -170,18 +176,38 @@ class MVM(nn.Module):
                                                 encoder_hidden_states=bert_encoder_output, output_hidden_states=True)
         bert_decoder_output = bert_decoder_output['hidden_states'][-1]
 
-        bert_decoder_output_flattened = bert_decoder_output.view(-1, bert_decoder_output.size(-1))
         bs, seq_len, _ = bert_decoder_output.size()
+        bert_decoder_output_flattened = bert_decoder_output.view(bs * seq_len, -1)
         products_input_ids_flattened = products_input_ids.view(bs * seq_len, -1)
         products_token_attention_mask_flattened = products_token_attention_mask.view(bs * seq_len, -1)
-        labels = products_input_ids_flattened.clone()
-        labels[products_token_attention_mask_flattened == 0] = -100
+        products_mol_attention_mask_flattened = products_mol_attention_mask.view(bs * seq_len)
 
-        outputs = self.decoder(input_ids=products_input_ids_flattened,
-                               attention_mask=products_token_attention_mask_flattened,
-                               encoder_outputs=bert_decoder_output_flattened, labels=labels)
-
-        return outputs
+        bert_decoder_output_flattened = bert_decoder_output_flattened[products_mol_attention_mask_flattened == 1]
+        products_input_ids_flattened = products_input_ids_flattened[products_mol_attention_mask_flattened == 1]
+        products_token_attention_mask_flattened = products_token_attention_mask_flattened[
+            products_mol_attention_mask_flattened == 1]
+        products_labels_flattened = products_input_ids_flattened.clone()
+        products_labels_flattened[products_token_attention_mask_flattened == 0] = -100
+        chunk_size = 2048 if not self.is_trainable_encoder else 256
+        all_loss = []
+        all_logits = []
+        with torch.set_grad_enabled(self.is_trainable_encoder):
+            for i in range(0, products_input_ids_flattened.size(0), chunk_size):
+                output = self.decoder(
+                    input_ids=products_input_ids_flattened[i:i + chunk_size],
+                    attention_mask=products_token_attention_mask_flattened[i:i + chunk_size],
+                    encoder_outputs=bert_decoder_output_flattened[i:i + chunk_size],
+                    labels=products_labels_flattened[i:i + chunk_size]
+                )
+                all_loss.append(output.loss)
+                all_logits.append(output.logits)
+        loss = torch.stack(all_loss).mean()
+        logits = torch.cat(all_logits, dim=0)
+        final_logits = torch.zeros(products_mol_attention_mask_flattened.size(0), products_labels_flattened.size(-1),
+                                   logits.size(-1), device=logits.device)
+        final_logits[products_mol_attention_mask_flattened.nonzero(as_tuple=True)[0]] = logits
+        final_logits = final_logits.view(bs, seq_len, -1)
+        return {"loss": loss, "logits": final_logits}
 
 
 def compute_metrics(eval_pred):
@@ -194,6 +220,7 @@ def compute_metrics(eval_pred):
 
     labels_mask = tgt_token_attention_mask
     labels[labels_mask == 0] = -100
+    labels_mask = labels_mask.astype(bool)
     predictions = np.argmax(predictions, axis=-1)  # Shape: (batch_size, max_seq_len, 75)
     total_tokens = 0
     total_samples = 0
@@ -317,6 +344,7 @@ def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
         eval_dataset={'validation': val_dataset, "train": train_subset},
         compute_metrics=lambda x: compute_metrics(x),
     )
+    print(trainer.evaluate())
     trainer.train()
 
 
