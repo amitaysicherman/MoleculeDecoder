@@ -245,7 +245,7 @@ def compute_metrics(eval_pred):
             if is_sample_correct:
                 correct_samples += 1
             else:
-                row_fcorrect = False
+                row_correct = False
         if row_correct:
             correct_samples_rows += 1
     token_accuracy = correct_tokens / total_tokens
