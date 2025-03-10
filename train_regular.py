@@ -7,7 +7,6 @@ from transformers import (
 )
 import numpy as np
 from transformers import AutoTokenizer
-# from autoencoder.data import get_tokenizer
 from autoencoder.data import preprocess_smiles
 
 class TranslationDataset(Dataset):
