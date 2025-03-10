@@ -10,7 +10,6 @@ from transformers import AutoTokenizer
 # from autoencoder.data import get_tokenizer
 from autoencoder.data import preprocess_smiles
 
-
 class TranslationDataset(Dataset):
     def __init__(self, split, is_retro=False):
         self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
@@ -42,7 +41,7 @@ class TranslationDataset(Dataset):
         tokens = self.tokenizer(mols, padding="max_length", truncation=True, max_length=self.max_mol_len,
                                 return_tensors="pt")
         tokens = {k: v.squeeze(0) for k, v in tokens.items()}
-        if tokens['attention_mask'][-1] == 0:
+        if tokens['attention_mask'][-1] != 0:
             return None
         if self.skip_unk:
             if self.tokenizer.unk_token_id in tokens['input_ids']:
@@ -66,7 +65,6 @@ class TranslationDataset(Dataset):
                 idx = np.random.randint(0, len(self.products))
             else:
                 do_again = False
-
         if self.is_retro:
             source_encoding = prod_tokens
             target_encoding = react_tokens
@@ -99,7 +97,7 @@ def compute_metrics(eval_pred):
     }
 
 
-def main(retro=False):
+def main(retro=False,batch_size=256):
     # Build vocabulary and create tokenizer
     tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
     config = T5Config(
@@ -133,11 +131,11 @@ def main(retro=False):
     # Training arguments
     name_suffix = "retro" if retro else "forward"
     training_args = TrainingArguments(
-        output_dir=f"./results_{name_suffix}",
+        output_dir=f"./res_{name_suffix}",
         evaluation_strategy="steps",
         learning_rate=2e-4,  # Higher learning rate since we're training from scratch
-        per_device_train_batch_size=256,
-        per_device_eval_batch_size=256,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
         eval_accumulation_steps=10,
         weight_decay=0.01,
         save_total_limit=3,
@@ -145,6 +143,7 @@ def main(retro=False):
         logging_steps=100,
         save_steps=1000,
         warmup_steps=2000,
+        logging_dir=f"./logs_{name_suffix}",
         lr_scheduler_type="constant",
         load_best_model_at_end=True,
         eval_steps=1000,
@@ -173,6 +172,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--retro", action="store_true")
+    parser.add_argument("--batch_size", type=int, default=256)
     args = parser.parse_args()
     retro = args.retro
-    main(retro)
+    main(retro, args.batch_size)
