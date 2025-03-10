@@ -131,6 +131,7 @@ class MVM(nn.Module):
         self.decoder = decoder
         self.bert_encoder = BertGenerationEncoder(config_enc)
         self.bert_decoder = BertGenerationDecoder(config_dec)
+        self.decoder_start_token = torch.nn.Parameter(torch.randn(1, config_dec.hidden_size))
 
     def get_mol_embeddings(self, input_ids, token_attention_mask, mol_attention_mask):
         batch_size, max_seq_len, seq_len = input_ids.shape
@@ -167,13 +168,15 @@ class MVM(nn.Module):
 
         product_embeddings = self.get_mol_embeddings(products_input_ids, products_token_attention_mask,
                                                      products_mol_attention_mask)
-
+        decoder_start_token = self.decoder_start_token.expand(product_embeddings.size(0), -1)
+        product_embeddings = torch.cat([decoder_start_token, product_embeddings], dim=1)
         bert_decoder_output = self.bert_decoder(inputs_embeds=product_embeddings,
                                                 attention_mask=products_mol_attention_mask,
                                                 encoder_hidden_states=bert_encoder_output,
                                                 encoder_attention_mask=src_seq_mask,
                                                 output_hidden_states=True)
         bert_decoder_output = bert_decoder_output['hidden_states'][-1]
+        bert_decoder_output = bert_decoder_output[:, 1:]  # Remove the start token
 
         bs, seq_len, _ = bert_decoder_output.size()
         bert_decoder_output_flattened = bert_decoder_output.view(bs * seq_len, -1)
@@ -208,7 +211,7 @@ class MVM(nn.Module):
         final_logits = torch.zeros(products_mol_attention_mask_flattened.size(0), products_labels_flattened.size(-1),
                                    logits.size(-1), device=logits.device)
         final_logits[products_mol_attention_mask_flattened.nonzero(as_tuple=True)[0]] = logits
-        final_logits = final_logits.view(bs, seq_len,logits.size(1), -1).argmax(dim=-1)
+        final_logits = final_logits.view(bs, seq_len, logits.size(1), -1).argmax(dim=-1)
         return {"loss": loss, "logits": final_logits}
 
 
