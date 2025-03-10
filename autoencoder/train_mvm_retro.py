@@ -14,7 +14,7 @@ from train_decoder import create_model
 # hidden_sizes = {'s': 128, 'm': 512, 'l': 512}
 num_layers = {'s': 2, 'm': 6, 'l': 24}
 num_heads = {'s': 2, 'm': 4, 'l': 8}
-
+DEBUG=False
 # if mps use mps, else if gpu use gpu, else use cpu
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -50,8 +50,12 @@ class ReactionMolsDataset(Dataset):
         self.skip_unk = skip_unk
         with open(f"{base_dir}/reactants-{split}.txt") as f:
             self.reactants = f.read().splitlines()
+            if DEBUG:
+                self.reactants = self.reactants[:10]
         with open(f"{base_dir}/products-{split}.txt") as f:
             self.products = f.read().splitlines()
+            if DEBUG:
+                self.products = self.products[:10]
         self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
         self.empty = {"input_ids": torch.tensor([self.tokenizer.pad_token_id] * 75),
                       "attention_mask": torch.tensor([0] * 75)}
@@ -177,7 +181,6 @@ class MVM(nn.Module):
                                                 encoder_attention_mask=src_seq_mask,
                                                 output_hidden_states=True)
         bert_decoder_output = bert_decoder_output['hidden_states'][-1]
-        bert_decoder_output = bert_decoder_output[:, 1:]  # Remove the start token
 
         bs, seq_len, _ = bert_decoder_output.size()
         bert_decoder_output_flattened = bert_decoder_output.view(bs * seq_len, -1)
@@ -276,6 +279,8 @@ def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
          train_decoder=False, cp=None):
     train_dataset = ReactionMolsDataset(split="train")
     val_dataset = ReactionMolsDataset(split="valid")
+    if DEBUG:
+        val_dataset=ReactionMolsDataset(split="train")
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
     encoder_config, decoder_config = size_to_configs(size, 768, train_dataset.tokenizer)
@@ -341,7 +346,7 @@ def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
         logging_steps=500,
         save_steps=2500,
         evaluation_strategy="steps",
-        eval_steps=2500,
+        eval_steps=2500 if not DEBUG else 50,
         save_total_limit=1,
         load_best_model_at_end=True,
         save_safetensors=False,
