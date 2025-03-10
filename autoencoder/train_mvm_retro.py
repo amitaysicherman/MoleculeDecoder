@@ -3,11 +3,8 @@ from torch import nn
 from torch.utils.data import Dataset
 from transformers import TrainingArguments, Trainer
 import os
-from torch.nn import functional as F
-import numpy as np
-from transformers import BertConfig, BertModel
 import random
-from autoencoder.data import smiles_to_tokens, get_tokenizer, preprocess_smiles
+from autoencoder.data import preprocess_smiles
 from transformers import AutoTokenizer
 import glob
 from transformers import BertGenerationDecoder, BertGenerationConfig, BertGenerationEncoder
