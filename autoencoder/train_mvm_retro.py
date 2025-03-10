@@ -168,9 +168,10 @@ class MVM(nn.Module):
 
         product_embeddings = self.get_mol_embeddings(products_input_ids, products_token_attention_mask,
                                                      products_mol_attention_mask)
-        decoder_start_token = self.decoder_start_token.expand(product_embeddings.size(0), -1)
+        decoder_start_token = self.decoder_start_token.unsqueeze(1).expand(product_embeddings.size(0), 1, -1)
         product_embeddings = torch.cat([decoder_start_token, product_embeddings], dim=1)
-        bert_decoder_output = self.bert_decoder(inputs_embeds=product_embeddings,
+
+        bert_decoder_output = self.bert_decoder(inputs_embeds=product_embeddings[:, :-1],
                                                 attention_mask=products_mol_attention_mask,
                                                 encoder_hidden_states=bert_encoder_output,
                                                 encoder_attention_mask=src_seq_mask,
