@@ -6,14 +6,17 @@ from transformers import (
     Trainer, TrainingArguments
 )
 import numpy as np
-from autoencoder.data import get_tokenizer
-from autoencoder.data import smiles_to_tokens
+from transformers import AutoTokenizer
+# from autoencoder.data import get_tokenizer
+from autoencoder.data import preprocess_smiles
 
 
 class TranslationDataset(Dataset):
-    def __init__(self, split, tokenizer, max_length=128,is_retro=False):
-        self.tokenizer = tokenizer
-        self.max_length = max_length
+    def __init__(self, split, is_retro=False):
+        self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
+        self.max_len = 10
+        self.max_mol_len = 75
+        self.skip_unk = True
         base_dir = "USPTO"
         self.is_retro = is_retro
         # Read source and target files
@@ -27,27 +30,50 @@ class TranslationDataset(Dataset):
     def __len__(self):
         return len(self.products)
 
-    def __getitem__(self, idx):
-        reac = self.reactants[idx]
-        reag = self.reagents[idx]
-        prod = self.products[idx]
+    def mols_smiles_to_tokens(self, mols_smiles):
+        mols = mols_smiles.strip().split(".")
 
-        if not self.is_retro:
-            source = f"{reac} .. {reag}"
-            target = prod
+        if len(mols) > self.max_len:
+            return None
+        mols = [preprocess_smiles(m) for m in mols]
+        if None in mols:
+            return None
+        mols=".".join(mols)
+        tokens = self.tokenizer(mols, padding="max_length", truncation=True, max_length=self.max_mol_len,
+                                return_tensors="pt")
+        tokens = {k: v.squeeze(0) for k, v in tokens.items()}
+        if tokens['attention_mask'][-1] == 0:
+            return None
+        if self.skip_unk:
+            if self.tokenizer.unk_token_id in tokens['input_ids']:
+                return None
+        return tokens
+
+    def __getitem__(self, idx):
+        do_again = True
+        while do_again:
+
+            reac = self.reactants[idx]
+            react_tokens = self.mols_smiles_to_tokens(reac)
+
+            reag = self.reagents[idx]
+            reag_tokens = self.mols_smiles_to_tokens(reag)
+
+            prod = self.products[idx]
+            prod_tokens = self.mols_smiles_to_tokens(prod)
+
+            if react_tokens is None or reag_tokens is None or prod_tokens is None:
+                idx = np.random.randint(0, len(self.products))
+            else:
+                do_again = False
+
+        if self.is_retro:
+            source_encoding = prod_tokens
+            target_encoding = react_tokens
         else:
-            source = prod
-            target = reac
-        source_tokens = " ".join(smiles_to_tokens(source))
-        target_tokens = " ".join(smiles_to_tokens(target))
-        source_encoding = self.tokenizer.encode(
-            source_tokens,
-            max_length=self.max_length,
-        )
-        target_encoding = self.tokenizer.encode(
-            target_tokens,
-            max_length=self.max_length,
-        )
+            source_encoding = {k: torch.cat([react_tokens[k], reag_tokens[k]], dim=0) for k in react_tokens}
+            target_encoding = prod_tokens
+
         label = target_encoding['input_ids'].clone()
         label[label == self.tokenizer.pad_token_id] = -100
         return {
@@ -72,9 +98,10 @@ def compute_metrics(eval_pred):
         "token_accuracy": token_accuracy
     }
 
+
 def main(retro=False):
     # Build vocabulary and create tokenizer
-    tokenizer = get_tokenizer()
+    tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
     config = T5Config(
         vocab_size=tokenizer.vocab_size,
         d_model=512,  # Hidden size
@@ -96,12 +123,10 @@ def main(retro=False):
     # Prepare datasets
     train_dataset = TranslationDataset(
         "train",
-        tokenizer,
         is_retro=retro
     )
     eval_dataset = TranslationDataset(
         "valid",
-        tokenizer,
         is_retro=retro
     )
 
@@ -141,7 +166,6 @@ def main(retro=False):
 
     # Train the model
     trainer.train(resume_from_checkpoint=False)
-
 
 
 if __name__ == "__main__":
