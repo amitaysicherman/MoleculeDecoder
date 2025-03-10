@@ -262,14 +262,20 @@ def compute_metrics(eval_pred, is_molformer=False):
     }
 
 
-def get_last_cp(base_dir):
+def get_last_cp(base_dir, return_step=False):
     if not os.path.exists(base_dir):
+        if return_step:
+            return None, -1
         return None
     all_checkpoints = glob.glob(f"{base_dir}/checkpoint-*")
     if not all_checkpoints:
+        if return_step:
+            return None, -1
         return None
     cp_steps = [int(cp.split("-")[-1]) for cp in all_checkpoints]
     last_cp = max(cp_steps)
+    if return_step:
+        return f"{base_dir}/checkpoint-{last_cp}", last_cp
     return f"{base_dir}/checkpoint-{last_cp}"
 
 
@@ -319,8 +325,9 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
     # Initialize MVM model with encoder and decoder
     model = MVM(config=config, alpha=alpha, is_molformer=use_molformer, encoder=encoder, decoder=decoder,
                 is_trainable_encoder=train_encoder)
+    last_steps = -1
     if cp is not None:
-        last_cp = get_last_cp(cp)
+        last_cp, last_steps = get_last_cp(cp, return_step=True)
         if last_cp is None:
             raise ValueError("Checkpoint path does not exist")
         model_file = f"{last_cp}/pytorch_model.bin"
@@ -345,7 +352,7 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
     if train_decoder:
         output_suf += "_train_dec"
     if cp is not None:
-        output_suf += "_cp"
+        output_suf += f"_cp-{last_steps}"
 
     os.makedirs(f"res_auto_mvm/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
