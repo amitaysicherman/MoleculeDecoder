@@ -173,7 +173,9 @@ class MVM(nn.Module):
 
         bert_decoder_output = self.bert_decoder(inputs_embeds=product_embeddings,
                                                 attention_mask=products_mol_attention_mask,
-                                                encoder_hidden_states=bert_encoder_output, output_hidden_states=True)
+                                                encoder_hidden_states=bert_encoder_output,
+                                                encoder_attention_mask=src_seq_mask,
+                                                output_hidden_states=True)
         bert_decoder_output = bert_decoder_output['hidden_states'][-1]
 
         bs, seq_len, _ = bert_decoder_output.size()
@@ -189,7 +191,7 @@ class MVM(nn.Module):
         products_labels_flattened = products_input_ids_flattened.clone()
         products_labels_flattened[products_token_attention_mask_flattened == 0] = -100
         chunk_size = 2048 if not self.is_trainable_encoder else 256
-        all_loss = []
+        loss = None
         all_logits = []
         with torch.set_grad_enabled(self.is_trainable_encoder):
             for i in range(0, products_input_ids_flattened.size(0), chunk_size):
@@ -199,14 +201,17 @@ class MVM(nn.Module):
                     encoder_outputs=bert_decoder_output_flattened[i:i + chunk_size],
                     labels=products_labels_flattened[i:i + chunk_size]
                 )
-                all_loss.append(output.loss)
+                if loss is None:
+                    loss = output.loss
+                else:
+                    loss.add_(output.loss)
                 all_logits.append(output.logits)
-        loss = torch.stack(all_loss).mean()
+        loss = loss.div_(len(all_logits))
         logits = torch.cat(all_logits, dim=0)
         final_logits = torch.zeros(products_mol_attention_mask_flattened.size(0), products_labels_flattened.size(-1),
                                    logits.size(-1), device=logits.device)
         final_logits[products_mol_attention_mask_flattened.nonzero(as_tuple=True)[0]] = logits
-        final_logits = final_logits.view(bs, seq_len, -1).argmax(dim=-1)
+        final_logits = final_logits.view(bs, seq_len,logits.size(1), -1).argmax(dim=-1)
         return {"loss": loss, "logits": final_logits}
 
 
@@ -226,21 +231,32 @@ def compute_metrics(eval_pred):
     total_samples = 0
     correct_tokens = 0
     correct_samples = 0
+    total_rows = 0
+    correct_samples_rows = 0
+
     batch_size, max_seq_len, seq_len = labels.shape
     for i in range(batch_size):
+        total_rows += 1
+        row_correct = True
         for j in range(max_seq_len):
             total_tokens += labels_mask[i, j].sum()
             correct_tokens += ((predictions[i, j] == labels[i, j]) & labels_mask[i, j]).sum()
             if labels_mask[i, j].sum() == 0:
                 continue
             total_samples += 1
-            correct_samples += ((predictions[i, j] == labels[i, j]) | (~labels_mask[i, j])).all()
-
+            is_sample_correct = ((predictions[i, j] == labels[i, j]) | (~labels_mask[i, j])).all()
+            if is_sample_correct:
+                correct_samples += 1
+            else:
+                row_fcorrect = False
+        if row_correct:
+            correct_samples_rows += 1
     token_accuracy = correct_tokens / total_tokens
     sample_accuracy = correct_samples / total_samples
     return {
         "token_accuracy": token_accuracy,
         "sample_accuracy": sample_accuracy,
+        "row_accuracy": correct_samples_rows / total_rows,
     }
 
 
