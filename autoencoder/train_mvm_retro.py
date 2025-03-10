@@ -206,7 +206,7 @@ class MVM(nn.Module):
         final_logits = torch.zeros(products_mol_attention_mask_flattened.size(0), products_labels_flattened.size(-1),
                                    logits.size(-1), device=logits.device)
         final_logits[products_mol_attention_mask_flattened.nonzero(as_tuple=True)[0]] = logits
-        final_logits = final_logits.view(bs, seq_len, -1)
+        final_logits = final_logits.view(bs, seq_len, -1).argmax(dim=-1)
         return {"loss": loss, "logits": final_logits}
 
 
@@ -221,7 +221,7 @@ def compute_metrics(eval_pred):
     labels_mask = tgt_token_attention_mask
     labels[labels_mask == 0] = -100
     labels_mask = labels_mask.astype(bool)
-    predictions = np.argmax(predictions, axis=-1)  # Shape: (batch_size, max_seq_len, 75)
+    # predictions = np.argmax(predictions, axis=-1)  # Shape: (batch_size, max_seq_len, 75)
     total_tokens = 0
     total_samples = 0
     correct_tokens = 0
@@ -319,7 +319,7 @@ def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
         num_train_epochs=num_epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        eval_accumulation_steps=15,
+        eval_accumulation_steps=300,
         logging_dir=f"logs_auto_mvm_retro/{output_suf}",
         logging_steps=1000,
         save_steps=10000,
