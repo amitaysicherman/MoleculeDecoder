@@ -4,15 +4,21 @@
 #SBATCH --requeue
 #SBATCH -c 8
 #SBATCH --gres=gpu:L40:1
-#SBATCH --array=0-8
+#SBATCH --array=0-3
 
 
 split_index=$(($SLURM_ARRAY_TASK_ID))
-#models: ae vae vq
-#sizes: s m l
-models_lines=("ae" "vae" "vq" "ae" "vae" "vq" "ae" "vae" "vq")
-sizes_lines=("s" "s" "s" "m" "m" "m" "l" "l" "l")
-model=${models_lines[$split_index]}
-size=${sizes_lines[$split_index]}
-
-python autoencoder/main.py --model $model --size $size
+export PYTHONPATH=$PYTHONPATH:$(pwd)
+if [ $split_index -eq 0 ]
+then
+    python  autoencoder/train_mvm.py --molformer --train_encoder --train_decoder --batch_size 128 --size sm
+elif [ $split_index -eq 1 ]
+then
+    python  autoencoder/train_mvm.py --molformer --train_encoder --train_decoder --batch_size 128 --size m --dropout 0.2
+elif [ $split_index -eq 2 ]
+then
+    python  autoencoder/train_mvm.py --molformer --train_encoder --train_decoder --batch_size 128 --size m --dropout 0.3
+elif [ $split_index -eq 3 ]
+then
+    python  autoencoder/train_mvm.py --molformer --train_encoder --train_decoder --batch_size 128 --size m --dropout 0.4
+fi
