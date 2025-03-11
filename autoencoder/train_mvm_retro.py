@@ -12,8 +12,6 @@ from transformers import AutoModel
 from train_decoder import create_model
 
 # hidden_sizes = {'s': 128, 'm': 512, 'l': 512}
-num_layers = {'s': 2, 'm': 6, 'l': 24}
-num_heads = {'s': 2, 'm': 4, 'l': 8}
 DEBUG=False
 # if mps use mps, else if gpu use gpu, else use cpu
 if torch.cuda.is_available():
@@ -22,14 +20,19 @@ elif torch.mps.is_available():
     device = torch.device("mps")
 else:
     device = torch.device("cpu")
+num_layers = {'s': 2, 'sm': 4, 'm': 6, 'l': 24}
+num_heads = {'s': 2, 'sm': 4, 'm': 4, 'l': 8}
+DROPOUT = 0.1
 
 
-def size_to_configs(size, hidden_size, tokenizer):
+def size_to_configs(size, hidden_size, tokenizer, dropout=DROPOUT):
     size_args = dict(
         hidden_size=hidden_size,
         num_hidden_layers=num_layers[size],
         num_attention_heads=num_heads[size],
         intermediate_size=hidden_size * 4,
+        hidden_dropout_prob=dropout,
+        attention_probs_dropout_prob=dropout,
     )
     common_args = dict(
         vocab_size=tokenizer.vocab_size,
@@ -276,14 +279,14 @@ def get_last_cp(base_dir):
 
 
 def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
-         train_decoder=False, cp=None):
+         train_decoder=False, cp=None, dropout=DROPOUT):
     train_dataset = ReactionMolsDataset(split="train")
     val_dataset = ReactionMolsDataset(split="valid")
     if DEBUG:
         val_dataset=ReactionMolsDataset(split="train")
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
-    encoder_config, decoder_config = size_to_configs(size, 768, train_dataset.tokenizer)
+    encoder_config, decoder_config = size_to_configs(size, 768, train_dataset.tokenizer, dropout=dropout)
     # Load encoder and decoder
 
     encoder = AutoModel.from_pretrained(
@@ -334,6 +337,8 @@ def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
         output_suf += "_train_dec"
     if cp is not None:
         output_suf += "_cp"
+    if dropout != DROPOUT:
+        output_suf += f"_dropout-{dropout}"
 
     os.makedirs(f"res_auto_mvm_retro/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
@@ -381,6 +386,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_encoder", type=int, default=1)
     parser.add_argument("--train_decoder", type=int, default=1)
     parser.add_argument("--cp", type=str, default=None)
+    parser.add_argument("--dropout", type=float, default=0.1)
     args = parser.parse_args()
 
     main(
