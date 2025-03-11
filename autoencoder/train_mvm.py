@@ -12,9 +12,9 @@ from transformers import AutoTokenizer
 import glob
 
 # hidden_sizes = {'s': 128, 'm': 512, 'l': 512}
-num_layers = {'s': 2, 'm': 6, 'l': 24}
-num_heads = {'s': 2, 'm': 4, 'l': 8}
-
+num_layers = {'s': 2, 'sm': 4, 'm': 6, 'l': 24}
+num_heads = {'s': 2, 'sm': 4, 'm': 4, 'l': 8}
+DROPOUT = 0.1
 # if mps use mps, else if gpu use gpu, else use cpu
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -24,7 +24,7 @@ else:
     device = torch.device("cpu")
 
 
-def size_to_config(size, hidden_size=512):
+def size_to_config(size, hidden_size=512, dropout=DROPOUT):
     config = BertConfig(
         vocab_size=1,
         hidden_size=hidden_size,
@@ -32,6 +32,8 @@ def size_to_config(size, hidden_size=512):
         num_attention_heads=num_heads[size],
         intermediate_size=hidden_size * 4,
         max_position_embeddings=25,
+        hidden_dropout_prob=dropout,
+        attention_probs_dropout_prob=dropout,
     )
     return config
 
@@ -280,12 +282,12 @@ def get_last_cp(base_dir, return_step=False):
 
 
 def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molformer=False, train_encoder=False,
-         train_decoder=False, cp=None):
+         train_decoder=False, cp=None, dropout=DROPOUT):
     train_dataset = ReactionMolsDataset(split="train", is_molformer=use_molformer)
     val_dataset = ReactionMolsDataset(split="valid", is_molformer=use_molformer)
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
-    config = size_to_config(size, hidden_size=512 if not use_molformer else 768)
+    config = size_to_config(size, hidden_size=512 if not use_molformer else 768, dropout=dropout)
 
     # Load encoder and decoder
     if use_molformer:
@@ -353,6 +355,8 @@ def main(batch_size=1024, num_epochs=10, lr=1e-4, size="m", alpha=0.5, use_molfo
         output_suf += "_train_dec"
     if cp is not None:
         output_suf += f"_cp-{last_steps}"
+    if dropout != DROPOUT:
+        output_suf += f"_dropout-{dropout}"
 
     os.makedirs(f"res_auto_mvm/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
@@ -407,6 +411,7 @@ if __name__ == "__main__":
     parser.add_argument("--train_encoder", action="store_true", help="Enable training of the encoder")
     parser.add_argument("--train_decoder", action="store_true", help="Enable training of the decoder")
     parser.add_argument("--cp", type=str, default=None)
+    parser.add_argument("--dropout", type=float, default=DROPOUT)
     args = parser.parse_args()
 
     main(
@@ -418,5 +423,7 @@ if __name__ == "__main__":
         args.molformer,
         args.train_encoder,
         args.train_decoder,
-        args.cp
+        args.cp,
+        args.dropout
+
     )
