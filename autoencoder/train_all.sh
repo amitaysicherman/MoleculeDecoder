@@ -21,4 +21,10 @@ then
 elif [ $split_index -eq 3 ]
 then
     python  autoencoder/train_mvm.py --molformer --train_encoder --train_decoder --batch_size 128 --size m --dropout 0.4
+elif [ $split_index -eq 4 ]
+then
+    python  autoencoder/train_mvm.py --molformer --train_encoder --train_decoder --batch_size 128 --size m --dropout 0.0
+elif [ $split_index -eq 5 ]
+then
+    python  autoencoder/train_mvm.py --molformer --train_encoder --train_decoder --batch_size 128 --size sm --dropout 0.0
 fi
