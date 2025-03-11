@@ -8,6 +8,7 @@ from transformers import (
 import numpy as np
 from transformers import AutoTokenizer
 from autoencoder.data import preprocess_smiles
+import random
 
 class TranslationDataset(Dataset):
     def __init__(self, split, is_retro=False):
@@ -91,7 +92,7 @@ def compute_metrics(eval_pred):
     token_accuracy = correct_not_pad.sum() / (~is_pad).sum()
 
     return {
-        "perfect_match_accuracy": perfect_match_accuracy,
+        "sample_accuracy": perfect_match_accuracy,
         "token_accuracy": token_accuracy
     }
 
@@ -122,10 +123,13 @@ def main(retro=False,batch_size=256):
         "train",
         is_retro=retro
     )
-    eval_dataset = TranslationDataset(
+    val_dataset = TranslationDataset(
         "valid",
         is_retro=retro
     )
+    train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
+    train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
+
 
     # Training arguments
     name_suffix = "retro" if retro else "forward"
@@ -146,7 +150,7 @@ def main(retro=False,batch_size=256):
         lr_scheduler_type="constant",
         load_best_model_at_end=True,
         eval_steps=1000,
-        metric_for_best_model="eval_token_accuracy",
+        metric_for_best_model="eval_validation_token_accuracy",
         save_only_model=True,
         save_safetensors=False,
     )
@@ -156,7 +160,7 @@ def main(retro=False,batch_size=256):
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
+        eval_dataset={'validation': val_dataset, "train": train_subset},
         compute_metrics=compute_metrics
     )
     # score = trainer.evaluate()
