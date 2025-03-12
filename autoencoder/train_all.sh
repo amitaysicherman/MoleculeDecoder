@@ -32,7 +32,11 @@ then
     python  autoencoder/train_mvm_retro.py --batch_size 128 --size sm
 elif [ $split_index -eq 7 ]
 then
-    python  autoencoder/train_mvm_retro.py --batch_size 128 --size m --dropout 0.0
+    python  autoencoder/train_mvm_retro.py --size m --parouts 1 --parouts_context 1
+elif [ $split_index -eq 8 ]
+then
+    python  autoencoder/train_mvm_retro.py --size m --parouts 1 --parouts_context 0
 fi
+
 
 
