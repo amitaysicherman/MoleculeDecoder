@@ -115,7 +115,7 @@ filename = "all_loaded_routes.json.gz"
 with requests.get(url, stream=True) as response:
     response.raise_for_status()
     total_size = int(response.headers.get("content-length", 0))
-    pbar = tqdm.tqdm(
+    pbar = tqdm(
         total=total_size, desc=os.path.basename(filename), unit="B", unit_scale=True
     )
     with open(filename, "wb") as fileobj:
