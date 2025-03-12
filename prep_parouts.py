@@ -128,7 +128,7 @@ if not os.path.exists(filename):
 json_file = "all_loaded_routes.json"
 
 if not os.path.exists(json_file):
-    cmd = " tar -xf all_loaded_routes.json.gz"
+    cmd = " gunzip all_loaded_routes.json.gz"
     os.system(cmd)
 json_obj = json.load(open(json_file))
 all_nodes = []
