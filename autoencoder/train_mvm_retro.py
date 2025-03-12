@@ -58,11 +58,11 @@ class ReactionMolsDataset(Dataset):
             with open(f"{base_dir}/products-{split}.txt") as f:
                 self.products = f.read().splitlines()
         else:
-            with open(f"{base_dir}/{split}.src") as f:
+            with open(f"{base_dir}/{split}.tgt") as f:
                 self.reactants = f.read().splitlines()
                 if not parouts_context:
                     self.reactants = [r.split(".")[0] for r in self.reactants]
-            with open(f"{base_dir}/{split}.tgt") as f:
+            with open(f"{base_dir}/{split}.src") as f:
                 self.products = f.read().splitlines()
 
         if DEBUG:
