@@ -11,7 +11,7 @@ from autoencoder.data import preprocess_smiles
 import random
 
 class TranslationDataset(Dataset):
-    def __init__(self, split, is_retro=False):
+    def __init__(self, split, is_retro=False, parouts=0):
         self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
         self.max_len = 10
         self.max_mol_len = 75
@@ -19,12 +19,21 @@ class TranslationDataset(Dataset):
         base_dir = "USPTO"
         self.is_retro = is_retro
         # Read source and target files
-        with open(f"{base_dir}/reactants-{split}.txt") as f:
-            self.reactants = f.read().splitlines()
-        with open(f"{base_dir}/products-{split}.txt") as f:
-            self.products = f.read().splitlines()
-        with open(f"{base_dir}/reagents-{split}.txt") as f:
-            self.reagents = f.read().splitlines()
+        if not parouts:
+            with open(f"{base_dir}/reactants-{split}.txt") as f:
+                self.reactants = f.read().splitlines()
+            with open(f"{base_dir}/products-{split}.txt") as f:
+                self.products = f.read().splitlines()
+            with open(f"{base_dir}/reagents-{split}.txt") as f:
+                self.reagents = f.read().splitlines()
+        else:
+            with open(f"PaRoutes/{split}.src") as f:
+                self.reactants = f.read().splitlines()
+                self.reactants = [r.split(".")[0] for r in self.reactants]
+            with open(f"PaRoutes/{split}.tgt") as f:
+                self.products = f.read().splitlines()
+            self.reagents = ["" for _ in self.reactants]
+        assert len(self.reactants) == len(self.products) == len(self.reagents)
 
     def __len__(self):
         return len(self.products)
@@ -97,7 +106,7 @@ def compute_metrics(eval_pred):
     }
 
 
-def main(retro=False,batch_size=256):
+def main(retro=False,batch_size=256,parouts=0):
     # Build vocabulary and create tokenizer
     tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
     config = T5Config(
@@ -121,11 +130,13 @@ def main(retro=False,batch_size=256):
     # Prepare datasets
     train_dataset = TranslationDataset(
         "train",
-        is_retro=retro
+        is_retro=retro,
+        parouts=parouts
     )
     val_dataset = TranslationDataset(
         "valid",
-        is_retro=retro
+        is_retro=retro,
+        parouts=parouts
     )
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
@@ -176,6 +187,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--retro", action="store_true")
     parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--parouts", type=int, default=0)
     args = parser.parse_args()
     retro = args.retro
-    main(retro, args.batch_size)
+    main(retro, args.batch_size, args.parouts)
