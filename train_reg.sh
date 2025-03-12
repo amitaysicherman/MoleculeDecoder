@@ -11,16 +11,16 @@ split_index=$(($SLURM_ARRAY_TASK_ID))
 export PYTHONPATH=$PYTHONPATH:$(pwd)
 if [ $split_index -eq 0 ]
 then
-    python  python train_regular.py
+    python train_regular.py
 elif [ $split_index -eq 1 ]
 then
-    python  python train_regular.py  --retro
+    python train_regular.py  --retro
 elif [ $split_index -eq 2 ]
 then
-    python  python train_regular.py --parouts 1
+    python train_regular.py --parouts 1
 elif [ $split_index -eq 3 ]
 then
-    python  python train_regular.py  --retro --parouts 1
+    python train_regular.py  --retro --parouts 1
 fi
 
 
