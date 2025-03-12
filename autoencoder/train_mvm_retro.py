@@ -12,7 +12,7 @@ from transformers import AutoModel
 from train_decoder import create_model
 
 # hidden_sizes = {'s': 128, 'm': 512, 'l': 512}
-DEBUG=False
+DEBUG = False
 # if mps use mps, else if gpu use gpu, else use cpu
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -47,18 +47,28 @@ def size_to_configs(size, hidden_size, tokenizer, dropout=DROPOUT):
 
 
 class ReactionMolsDataset(Dataset):
-    def __init__(self, base_dir="USPTO", split="train", max_mol_len=75, max_len=10, skip_unk=True):
+    def __init__(self, base_dir="USPTO", split="train", max_mol_len=75, max_len=10, skip_unk=True,
+                 parouts_context=True):
         self.max_len = max_len
         self.max_mol_len = max_mol_len
         self.skip_unk = skip_unk
-        with open(f"{base_dir}/reactants-{split}.txt") as f:
-            self.reactants = f.read().splitlines()
-            if DEBUG:
-                self.reactants = self.reactants[:10]
-        with open(f"{base_dir}/products-{split}.txt") as f:
-            self.products = f.read().splitlines()
-            if DEBUG:
-                self.products = self.products[:10]
+        if base_dir == "USPTO":
+            with open(f"{base_dir}/reactants-{split}.txt") as f:
+                self.reactants = f.read().splitlines()
+            with open(f"{base_dir}/products-{split}.txt") as f:
+                self.products = f.read().splitlines()
+        else:
+            with open(f"{base_dir}/{split}.src") as f:
+                self.reactants = f.read().splitlines()
+                if not parouts_context:
+                    self.reactants = [r.split(".")[0] for r in self.reactants]
+            with open(f"{base_dir}/{split}.tgt") as f:
+                self.products = f.read().splitlines()
+
+        if DEBUG:
+            self.reactants = self.reactants[:10]
+            self.products = self.products[:10]
+
         self.tokenizer = AutoTokenizer.from_pretrained("ibm/MoLFormer-XL-both-10pct", trust_remote_code=True)
         self.empty = {"input_ids": torch.tensor([self.tokenizer.pad_token_id] * 75),
                       "attention_mask": torch.tensor([0] * 75)}
@@ -279,11 +289,12 @@ def get_last_cp(base_dir):
 
 
 def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
-         train_decoder=False, cp=None, dropout=DROPOUT):
-    train_dataset = ReactionMolsDataset(split="train")
-    val_dataset = ReactionMolsDataset(split="valid")
+         train_decoder=False, cp=None, dropout=DROPOUT, parouts=False, parouts_context=True):
+    base_dir = "USPTO" if not parouts else "PaRoutes"
+    train_dataset = ReactionMolsDataset(split="train", parouts_context=parouts_context, base_dir=base_dir)
+    val_dataset = ReactionMolsDataset(split="valid", parouts_context=parouts_context, base_dir=base_dir)
     if DEBUG:
-        val_dataset=ReactionMolsDataset(split="train")
+        val_dataset = ReactionMolsDataset(split="train", parouts_context=parouts_context, base_dir=base_dir)
     train_subset_random_indices = random.sample(range(len(train_dataset)), len(val_dataset))
     train_subset = torch.utils.data.Subset(train_dataset, train_subset_random_indices)
     encoder_config, decoder_config = size_to_configs(size, 768, train_dataset.tokenizer, dropout=dropout)
@@ -339,6 +350,10 @@ def main(batch_size=32, num_epochs=10, lr=1e-4, size="m", train_encoder=False,
         output_suf += "_cp"
     if dropout != DROPOUT:
         output_suf += f"_dropout-{dropout}"
+    if parouts:
+        output_suf += "_parouts"
+        if parouts_context:
+            output_suf += "_context"
 
     os.makedirs(f"res_auto_mvm_retro/{output_suf}", exist_ok=True)
     train_args = TrainingArguments(
@@ -387,6 +402,9 @@ if __name__ == "__main__":
     parser.add_argument("--train_decoder", type=int, default=1)
     parser.add_argument("--cp", type=str, default=None)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--parouts", type=int, default=0)
+    parser.add_argument("--parouts_context", type=int, default=1)
+
     args = parser.parse_args()
 
     main(
@@ -397,4 +415,7 @@ if __name__ == "__main__":
         bool(args.train_encoder),
         bool(args.train_decoder),
         args.cp,
+        args.dropout,
+        bool(args.parouts),
+        bool(args.parouts_context)
     )
