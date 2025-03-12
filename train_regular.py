@@ -27,10 +27,10 @@ class TranslationDataset(Dataset):
             with open(f"{base_dir}/reagents-{split}.txt") as f:
                 self.reagents = f.read().splitlines()
         else:
-            with open(f"PaRoutes/{split}.src") as f:
+            with open(f"PaRoutes/{split}.tgt") as f:
                 self.reactants = f.read().splitlines()
                 self.reactants = [r.split(".")[0] for r in self.reactants]
-            with open(f"PaRoutes/{split}.tgt") as f:
+            with open(f"PaRoutes/{split}.src") as f:
                 self.products = f.read().splitlines()
             self.reagents = ["" for _ in self.reactants]
         assert len(self.reactants) == len(self.products) == len(self.reagents)
