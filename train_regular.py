@@ -47,7 +47,7 @@ class TranslationDataset(Dataset):
         if None in mols:
             return None
         mols=".".join(mols)
-        tokens = self.tokenizer(mols, padding="max_length", truncation=True, max_length=self.max_mol_len,
+        tokens = self.tokenizer(mols, padding="max_length", truncation=True, max_length=self.max_mol_len*self.max_len,
                                 return_tensors="pt")
         tokens = {k: v.squeeze(0) for k, v in tokens.items()}
         if tokens['attention_mask'][-1] != 0:
