@@ -112,19 +112,24 @@ import requests
 
 url = "https://zenodo.org/record/7341155/files/all_loaded_routes.json.gz?download=1"
 filename = "all_loaded_routes.json.gz"
-with requests.get(url, stream=True) as response:
-    response.raise_for_status()
-    total_size = int(response.headers.get("content-length", 0))
-    pbar = tqdm(
-        total=total_size, desc=os.path.basename(filename), unit="B", unit_scale=True
-    )
-    with open(filename, "wb") as fileobj:
-        for chunk in response.iter_content(chunk_size=1024):
-            fileobj.write(chunk)
-            pbar.update(len(chunk))
-    pbar.close()
+if not os.path.exists(filename):
+    with requests.get(url, stream=True) as response:
+        response.raise_for_status()
+        total_size = int(response.headers.get("content-length", 0))
+        pbar = tqdm(
+            total=total_size, desc=os.path.basename(filename), unit="B", unit_scale=True
+        )
+        with open(filename, "wb") as fileobj:
+            for chunk in response.iter_content(chunk_size=1024):
+                fileobj.write(chunk)
+                pbar.update(len(chunk))
+        pbar.close()
 
 json_file = "all_loaded_routes.json"
+
+if not os.path.exists(json_file):
+    cmd = " tar -xf all_loaded_routes.json.gz"
+    os.system(cmd)
 json_obj = json.load(open(json_file))
 all_nodes = []
 all_ancestors = []
