@@ -36,12 +36,6 @@ then
 elif [ $split_index -eq 8 ]
 then
     python  autoencoder/train_mvm_retro.py --size m --parouts 1 --parouts_context 0 --retro
-elif [ $split_index -eq 9 ]
-then
-    python  autoencoder/train_mvm_retro.py --size m --parouts 0 --parouts_context 0  --retro
-elif [ $split_index -eq 10 ]
-then
-    python  autoencoder/train_mvm_retro.py --size m --parouts 0 --parouts_context 0
 fi
 
 
